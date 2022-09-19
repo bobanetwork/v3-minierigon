@@ -22,7 +22,6 @@ import (
 	"github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/erigon/core/vm"
 	"github.com/ledgerwatch/erigon/eth/filters"
-	"github.com/ledgerwatch/erigon/ethdb"
 	"github.com/ledgerwatch/erigon/ethdb/bitmapdb"
 	"github.com/ledgerwatch/erigon/ethdb/cbor"
 	"github.com/ledgerwatch/erigon/params"
@@ -43,8 +42,7 @@ func (api *BaseAPI) getReceipts(ctx context.Context, tx kv.Tx, chainConfig *para
 		}
 		return h
 	}
-	contractHasTEVM := ethdb.GetHasTEVM(tx)
-	_, _, _, ibs, _, err := transactions.ComputeTxEnv(ctx, block, chainConfig, getHeader, contractHasTEVM, ethash.NewFaker(), tx, block.Hash(), 0)
+	_, _, _, ibs, _, err := transactions.ComputeTxEnv(ctx, block, chainConfig, getHeader, ethash.NewFaker(), tx, block.Hash(), 0)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +58,7 @@ func (api *BaseAPI) getReceipts(ctx context.Context, tx kv.Tx, chainConfig *para
 	for i, txn := range block.Transactions() {
 		ibs.Prepare(txn.Hash(), block.Hash(), i)
 		header := block.Header()
-		receipt, _, err := core.ApplyTransaction(chainConfig, core.GetHashFn(header, getHeader), ethashFaker, nil, gp, ibs, noopWriter, header, txn, usedGas, vm.Config{}, contractHasTEVM)
+		receipt, _, err := core.ApplyTransaction(chainConfig, core.GetHashFn(header, getHeader), ethashFaker, nil, gp, ibs, noopWriter, header, txn, usedGas, vm.Config{})
 		if err != nil {
 			return nil, err
 		}
@@ -72,9 +70,9 @@ func (api *BaseAPI) getReceipts(ctx context.Context, tx kv.Tx, chainConfig *para
 }
 
 // GetLogs implements eth_getLogs. Returns an array of logs matching a given filter object.
-func (api *APIImpl) GetLogs(ctx context.Context, crit filters.FilterCriteria) ([]*types.Log, error) {
+func (api *APIImpl) GetLogs(ctx context.Context, crit filters.FilterCriteria) (types.Logs, error) {
 	var begin, end uint64
-	logs := []*types.Log{}
+	logs := types.Logs{}
 
 	tx, beginErr := api.db.BeginRo(ctx)
 	if beginErr != nil {
@@ -275,13 +273,30 @@ func (api *APIImpl) GetTransactionReceipt(ctx context.Context, txnHash common.Ha
 	var ok bool
 
 	blockNum, ok, err = api.txnLookup(ctx, tx, txnHash)
-	if !ok || blockNum == 0 {
-		// It is not an ideal solution (ideal solution requires extending TxnLookupReply proto type to include bool flag indicating absense of result),
-		// but 0 block number is used here to mean that the transaction is not found
-		return nil, nil
-	}
 	if err != nil {
 		return nil, err
+	}
+
+	cc, err := api.chainConfig(tx)
+	if err != nil {
+		return nil, err
+	}
+
+	if !ok && cc.Bor == nil {
+		return nil, nil
+	}
+
+	// if not ok and cc.Bor != nil then we might have a bor transaction
+	if !ok {
+		blockNumPtr, err := rawdb.ReadBorTxLookupEntry(tx, txnHash)
+		if err != nil {
+			return nil, err
+		}
+		if blockNumPtr == nil {
+			return nil, nil
+		}
+
+		blockNum = *blockNumPtr
 	}
 
 	block, err := api.blockByNumberWithSenders(tx, blockNum)
@@ -292,10 +307,6 @@ func (api *APIImpl) GetTransactionReceipt(ctx context.Context, txnHash common.Ha
 		return nil, nil // not error, see https://github.com/ledgerwatch/erigon/issues/1645
 	}
 
-	cc, err := api.chainConfig(tx)
-	if err != nil {
-		return nil, err
-	}
 	var txnIndex uint64
 	var txn types.Transaction
 	for idx, transaction := range block.Transactions() {
@@ -307,10 +318,6 @@ func (api *APIImpl) GetTransactionReceipt(ctx context.Context, txnHash common.Ha
 	}
 
 	if txn == nil {
-		if cc.Bor == nil {
-			return nil, nil
-		}
-
 		borTx, blockHash, _, _, err := rawdb.ReadBorTransactionForBlockNumber(tx, blockNum)
 		if err != nil {
 			return nil, err

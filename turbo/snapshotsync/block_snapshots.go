@@ -412,6 +412,9 @@ func (s *RoSnapshots) Files() (list []string) {
 	defer s.Txs.lock.RUnlock()
 	max := s.BlocksAvailable()
 	for _, seg := range s.Bodies.segments {
+		if seg.seg == nil {
+			continue
+		}
 		if seg.ranges.from > max {
 			continue
 		}
@@ -419,6 +422,9 @@ func (s *RoSnapshots) Files() (list []string) {
 		list = append(list, fName)
 	}
 	for _, seg := range s.Headers.segments {
+		if seg.seg == nil {
+			continue
+		}
 		if seg.ranges.from > max {
 			continue
 		}
@@ -426,6 +432,9 @@ func (s *RoSnapshots) Files() (list []string) {
 		list = append(list, fName)
 	}
 	for _, seg := range s.Txs.segments {
+		if seg.Seg == nil {
+			continue
+		}
 		if seg.ranges.from > max {
 			continue
 		}
@@ -959,10 +968,16 @@ func (br *BlockRetire) Result() *BlockRetireResult {
 	return r
 }
 func CanRetire(curBlockNum uint64, snapshots *RoSnapshots) (blockFrom, blockTo uint64, can bool) {
+	if curBlockNum <= params.FullImmutabilityThreshold {
+		return
+	}
 	blockFrom = snapshots.BlocksAvailable() + 1
 	return canRetire(blockFrom, curBlockNum-params.FullImmutabilityThreshold)
 }
 func canRetire(from, to uint64) (blockFrom, blockTo uint64, can bool) {
+	if to <= from {
+		return
+	}
 	blockFrom = (from / 1_000) * 1_000
 	roundedTo1K := (to / 1_000) * 1_000
 	var maxJump uint64 = 1_000
@@ -1098,23 +1113,24 @@ func DumpBlocks(ctx context.Context, blockFrom, blockTo, blocksPerFile uint64, t
 		return nil
 	}
 	chainConfig := tool.ChainConfigFromDB(chainDB)
-	chainID, _ := uint256.FromBig(chainConfig.ChainID)
 	for i := blockFrom; i < blockTo; i = chooseSegmentEnd(i, blockTo, blocksPerFile) {
-		if err := dumpBlocksRange(ctx, i, chooseSegmentEnd(i, blockTo, blocksPerFile), tmpDir, snapDir, chainDB, *chainID, workers, lvl); err != nil {
+		if err := dumpBlocksRange(ctx, i, chooseSegmentEnd(i, blockTo, blocksPerFile), tmpDir, snapDir, chainDB, *chainConfig, workers, lvl); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func dumpBlocksRange(ctx context.Context, blockFrom, blockTo uint64, tmpDir, snapDir string, chainDB kv.RoDB, chainID uint256.Int, workers int, lvl log.Lvl) error {
+func dumpBlocksRange(ctx context.Context, blockFrom, blockTo uint64, tmpDir, snapDir string, chainDB kv.RoDB, chainConfig params.ChainConfig, workers int, lvl log.Lvl) error {
 	segName := snap.SegmentFileName(blockFrom, blockTo, snap.Headers)
 	f, _ := snap.ParseFileName(snapDir, segName)
 	if err := DumpHeaders(ctx, chainDB, f.Path, tmpDir, blockFrom, blockTo, workers, lvl); err != nil {
 		return fmt.Errorf("DumpHeaders: %w", err)
 	}
 	p := &background.Progress{}
-	if err := buildIdx(ctx, f, chainID, tmpDir, p, lvl); err != nil {
+
+	chainId, _ := uint256.FromBig(chainConfig.ChainID)
+	if err := buildIdx(ctx, f, *chainId, tmpDir, p, lvl); err != nil {
 		return err
 	}
 
@@ -1124,7 +1140,7 @@ func dumpBlocksRange(ctx context.Context, blockFrom, blockTo uint64, tmpDir, sna
 		return fmt.Errorf("DumpBodies: %w", err)
 	}
 	p = &background.Progress{}
-	if err := buildIdx(ctx, f, chainID, tmpDir, p, lvl); err != nil {
+	if err := buildIdx(ctx, f, *chainId, tmpDir, p, lvl); err != nil {
 		return err
 	}
 
@@ -1134,7 +1150,7 @@ func dumpBlocksRange(ctx context.Context, blockFrom, blockTo uint64, tmpDir, sna
 		return fmt.Errorf("DumpTxs: %w", err)
 	}
 	p = &background.Progress{}
-	if err := buildIdx(ctx, f, chainID, tmpDir, p, lvl); err != nil {
+	if err := buildIdx(ctx, f, *chainId, tmpDir, p, lvl); err != nil {
 		return err
 	}
 
@@ -1297,6 +1313,7 @@ func DumpTxs(ctx context.Context, db kv.RoDB, segmentFile, tmpDir string, blockF
 			if err != nil {
 				return fmt.Errorf("%w, block: %d", err, blockNum)
 			}
+			// first tx byte => sender adress => tx rlp
 			if err := f.AddWord(valueBuf); err != nil {
 				return err
 			}
@@ -1427,7 +1444,9 @@ func DumpBodies(ctx context.Context, db kv.RoDB, segmentFilePath, tmpDir string,
 	}
 	defer f.Close()
 
-	key := make([]byte, 8+32)
+	blockNumByteLength := 8
+	blockHashByteLength := 32
+	key := make([]byte, blockNumByteLength+blockHashByteLength)
 	from := dbutils.EncodeBlockNumber(blockFrom)
 	if err := kv.BigChunks(db, kv.HeaderCanonical, from, func(tx kv.Tx, k, v []byte) (bool, error) {
 		blockNum := binary.BigEndian.Uint64(k)
@@ -1613,18 +1632,20 @@ RETRY:
 				if !bodyGetter.HasNext() {
 					return fmt.Errorf("not enough bodies")
 				}
+
 				bodyBuf, _ = bodyGetter.Next(bodyBuf[:0])
 				if err := rlp.DecodeBytes(bodyBuf, body); err != nil {
 					return err
 				}
+
 				blockNum++
 			}
-
+			firstTxByteAndlengthOfAddress := 21
 			isSystemTx := len(word) == 0
 			if isSystemTx { // system-txs hash:pad32(txnID)
 				binary.BigEndian.PutUint64(slot.IDHash[:], firstTxID+i)
 			} else {
-				if _, err := parseCtx.ParseTransaction(word[1+20:], 0, &slot, nil, true /* hasEnvelope */, nil); err != nil {
+				if _, err = parseCtx.ParseTransaction(word[firstTxByteAndlengthOfAddress:], 0, &slot, nil, true /* hasEnvelope */, nil /* validateHash */); err != nil {
 					return fmt.Errorf("ParseTransaction: %w, blockNum: %d, i: %d", err, blockNum, i)
 				}
 			}
@@ -1638,7 +1659,6 @@ RETRY:
 
 			i++
 			offset = nextPos
-
 		}
 
 		if i != expectedCount {

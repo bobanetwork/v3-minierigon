@@ -712,7 +712,7 @@ func deleteBody(db kv.Deleter, hash common.Hash, number uint64) {
 }
 
 // MakeBodiesCanonical - move all txs of non-canonical blocks from NonCanonicalTxs table to EthTx table
-func MakeBodiesCanonical(tx kv.RwTx, from uint64, ctx context.Context, logPrefix string, logEvery *time.Ticker) error {
+func MakeBodiesCanonical(tx kv.RwTx, from uint64, ctx context.Context, logPrefix string, logEvery *time.Ticker, cb func(blockNum, lastTxnNum uint64)) error {
 	for blockNum := from; ; blockNum++ {
 		h, err := ReadCanonicalHash(tx, blockNum)
 		if err != nil {
@@ -754,6 +754,10 @@ func MakeBodiesCanonical(tx kv.RwTx, from uint64, ctx context.Context, logPrefix
 		bodyForStorage.BaseTxId = newBaseId
 		if err := WriteBodyForStorage(tx, h, blockNum, bodyForStorage); err != nil {
 			return err
+		}
+		if cb != nil {
+			lastTxnNum := bodyForStorage.BaseTxId + uint64(bodyForStorage.TxAmount)
+			cb(blockNum, lastTxnNum)
 		}
 
 		select {
@@ -1614,10 +1618,10 @@ func IsPosBlock(db kv.Getter, blockHash common.Hash) (trans bool, err error) {
 	return header.Difficulty.Cmp(common.Big0) == 0, nil
 }
 
-var SapshotsKey = []byte("snapshots")
+var SnapshotsKey = []byte("snapshots")
 
 func ReadSnapshots(tx kv.Tx) ([]string, error) {
-	v, err := tx.GetOne(kv.DatabaseInfo, SapshotsKey)
+	v, err := tx.GetOne(kv.DatabaseInfo, SnapshotsKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1627,8 +1631,11 @@ func ReadSnapshots(tx kv.Tx) ([]string, error) {
 }
 
 func WriteSnapshots(tx kv.RwTx, list []string) error {
-	res, _ := json.Marshal(list)
-	return tx.Put(kv.DatabaseInfo, SapshotsKey, res)
+	res, err := json.Marshal(list)
+	if err != nil {
+		return err
+	}
+	return tx.Put(kv.DatabaseInfo, SnapshotsKey, res)
 }
 
 // PruneTable has `limit` parameter to avoid too large data deletes per one sync cycle - better delete by small portions to reduce db.FreeList size

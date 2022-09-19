@@ -134,7 +134,6 @@ func executeBlock(
 	writeChangesets bool,
 	writeReceipts bool,
 	writeCallTraces bool,
-	contractHasTEVM func(contractHash commonold.Hash) (bool, error),
 	initialCycle bool,
 	effectiveEngine consensus.Engine,
 ) error {
@@ -154,7 +153,7 @@ func executeBlock(
 		return vm.NewStructLogger(&vm.LogConfig{}), nil
 	}
 
-	callTracer := calltracer.NewCallTracer(contractHasTEVM)
+	callTracer := calltracer.NewCallTracer()
 	vmConfig.Debug = true
 	vmConfig.Tracer = callTracer
 
@@ -165,9 +164,9 @@ func executeBlock(
 	getHashFn := core.GetHashFn(block.Header(), getHeader)
 
 	if isPoSa {
-		execRs, err = core.ExecuteBlockEphemerallyForBSC(cfg.chainConfig, &vmConfig, getHashFn, cfg.engine, block, stateReader, stateWriter, epochReader{tx: tx}, chainReader{config: cfg.chainConfig, tx: tx, blockReader: cfg.blockReader}, contractHasTEVM, false, getTracer)
+		execRs, err = core.ExecuteBlockEphemerallyForBSC(cfg.chainConfig, &vmConfig, getHashFn, cfg.engine, block, stateReader, stateWriter, epochReader{tx: tx}, chainReader{config: cfg.chainConfig, tx: tx, blockReader: cfg.blockReader}, false, getTracer)
 	} else {
-		execRs, err = core.ExecuteBlockEphemerally(cfg.chainConfig, &vmConfig, getHashFn, cfg.engine, block, stateReader, stateWriter, epochReader{tx: tx}, chainReader{config: cfg.chainConfig, tx: tx, blockReader: cfg.blockReader}, contractHasTEVM, false, getTracer)
+		execRs, err = core.ExecuteBlockEphemerally(cfg.chainConfig, &vmConfig, getHashFn, cfg.engine, block, stateReader, stateWriter, epochReader{tx: tx}, chainReader{config: cfg.chainConfig, tx: tx, blockReader: cfg.blockReader}, false, getTracer)
 	}
 	if err != nil {
 		return err
@@ -243,12 +242,13 @@ func ExecBlock22(s *StageState, u Unwinder, tx kv.RwTx, toBlock uint64, ctx cont
 	}()
 	ctx = context.Background()
 
-	workersCount := cfg.workersCount
+	//workersCount := cfg.workersCount
+	workersCount := 2
 	if !initialCycle {
 		workersCount = 1
 	}
 	useExternalTx := tx != nil
-	if !useExternalTx && workersCount == 1 {
+	if !useExternalTx {
 		tx, err = cfg.db.BeginRw(ctx)
 		if err != nil {
 			return err
@@ -282,7 +282,7 @@ func ExecBlock22(s *StageState, u Unwinder, tx kv.RwTx, toBlock uint64, ctx cont
 		cfg.chainConfig, cfg.genesis, initialCycle); err != nil {
 		return err
 	}
-	if !useExternalTx && workersCount == 1 {
+	if !useExternalTx {
 		if err = tx.Commit(); err != nil {
 			return err
 		}
@@ -311,24 +311,6 @@ func unwindExec22(u *UnwindState, s *StageState, tx kv.RwTx, ctx context.Context
 		return fmt.Errorf("delete newer epochs: %w", err)
 	}
 
-	/*
-		// Truncate CallTraceSet
-		keyStart := dbutils.EncodeBlockNumber(u.UnwindPoint + 1)
-		c, err := tx.RwCursorDupSort(kv.CallTraceSet)
-		if err != nil {
-			return err
-		}
-		defer c.Close()
-		for k, _, err := c.Seek(keyStart); k != nil; k, _, err = c.NextNoDup() {
-			if err != nil {
-				return err
-			}
-			err = c.DeleteCurrentDuplicates()
-			if err != nil {
-				return err
-			}
-		}
-	*/
 	return nil
 }
 
@@ -447,17 +429,11 @@ Loop:
 
 		lastLogTx += uint64(block.Transactions().Len())
 
-		var contractHasTEVM func(contractHash commonold.Hash) (bool, error)
-
-		if cfg.vmConfig.EnableTEMV {
-			contractHasTEVM = ethdb.GetHasTEVM(tx)
-		}
-
 		// Incremental move of next stages depend on fully written ChangeSets, Receipts, CallTraceSet
 		writeChangeSets := nextStagesExpectData || blockNum > cfg.prune.History.PruneTo(to)
 		writeReceipts := nextStagesExpectData || blockNum > cfg.prune.Receipts.PruneTo(to)
 		writeCallTraces := nextStagesExpectData || blockNum > cfg.prune.CallTraces.PruneTo(to)
-		if err = executeBlock(block, tx, batch, cfg, *cfg.vmConfig, writeChangeSets, writeReceipts, writeCallTraces, contractHasTEVM, initialCycle, effectiveEngine); err != nil {
+		if err = executeBlock(block, tx, batch, cfg, *cfg.vmConfig, writeChangeSets, writeReceipts, writeCallTraces, initialCycle, effectiveEngine); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				log.Warn(fmt.Sprintf("[%s] Execution failed", logPrefix), "block", blockNum, "hash", block.Hash().String(), "err", err)
 				if cfg.hd != nil {
@@ -657,6 +633,7 @@ func unwindExecutionStage(u *UnwindState, s *StageState, tx kv.RwTx, ctx context
 				newV := make([]byte, acc.EncodingLengthForStorage())
 				acc.EncodeForStorage(newV)
 				if accumulator != nil {
+					fmt.Printf("un ch acc: %x, %d, %x\n", address, acc.Incarnation, newV)
 					accumulator.ChangeAccount(address, acc.Incarnation, newV)
 				}
 				if err := next(k, k, newV); err != nil {
@@ -666,6 +643,7 @@ func unwindExecutionStage(u *UnwindState, s *StageState, tx kv.RwTx, ctx context
 				if accumulator != nil {
 					var address commonold.Address
 					copy(address[:], k)
+					fmt.Printf("un del acc: %x\n", address)
 					accumulator.DeleteAccount(address)
 				}
 				if err := next(k, k, nil); err != nil {
@@ -681,6 +659,7 @@ func unwindExecutionStage(u *UnwindState, s *StageState, tx kv.RwTx, ctx context
 			copy(address[:], k[:length.Addr])
 			incarnation = binary.BigEndian.Uint64(k[length.Addr:])
 			copy(location[:], k[length.Addr+length.Incarnation:])
+			fmt.Printf("un ch st: %x, %d, %x, %x\n", address, incarnation, location, common.Copy(v))
 			accumulator.ChangeStorage(address, incarnation, location, common.Copy(v))
 		}
 		if len(v) > 0 {

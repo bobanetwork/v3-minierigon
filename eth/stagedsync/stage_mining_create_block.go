@@ -168,6 +168,7 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 
         	log.Debug("MMDBG SpawnMiningCreateBlockStage after merge", "txSlots", txSlots)
 
+		var skipByChainIDMismatch uint64 = 0
 		for i := range txSlots.Txs {
 			s := rlp.NewStream(bytes.NewReader(txSlots.Txs[i]), uint64(len(txSlots.Txs[i])))
                         log.Debug("MMDBG Candidate transaction", "i", i, "tx", txSlots.Txs[i], "s", s)
@@ -180,7 +181,8 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 			if err != nil {
 				return err
 			}
-			if transaction.GetChainID().ToBig().Cmp(cfg.chainConfig.ChainID) != 0 {
+			if transaction.GetChainID().ToBig().Uint64() != 0 && transaction.GetChainID().ToBig().Cmp(cfg.chainConfig.ChainID) != 0 {
+				skipByChainIDMismatch++
 				continue
 			}
 			log.Debug("MMDBG processing", "i", i, "txSlots", txSlots)
@@ -442,12 +444,12 @@ func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config pa
 			continue
 		}
 
-		baseFee256 := uint256.NewInt(0)
-		if baseFee256.SetFromBig(baseFee) {
-			return nil, fmt.Errorf("bad baseFee")
-		}
-		// Make sure the transaction gasFeeCap is greater than the block's baseFee.
 		if config.IsLondon(blockNumber) {
+			baseFee256 := uint256.NewInt(0)
+			if overflow := baseFee256.SetFromBig(baseFee); overflow {
+				return nil, fmt.Errorf("bad baseFee %s", baseFee)
+			}
+			// Make sure the transaction gasFeeCap is greater than the block's baseFee.
 			if !transaction.GetFeeCap().IsZero() || !transaction.GetTip().IsZero() {
 				if err := core.CheckEip1559TxGasFeeCap(sender, transaction.GetFeeCap(), transaction.GetTip(), baseFee256); err != nil {
 					transactions = transactions[1:]
