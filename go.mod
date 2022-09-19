@@ -21,7 +21,7 @@ require (
 	github.com/benesch/cgosymbolizer v0.0.0-20190515212042-bec6fe6e597b
 	github.com/btcsuite/btcd v0.22.0-beta
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
-	github.com/consensys/gnark-crypto v0.4.0
+	github.com/consensys/gnark-crypto v0.4.1-0.20210426202927-39ac3d4b3f1f
 	github.com/crate-crypto/go-ipa v0.0.0-20220523130400-f11357ae11c7
 	github.com/davecgh/go-spew v1.1.1
 	github.com/deckarep/golang-set v1.8.0
@@ -30,7 +30,6 @@ require (
 	github.com/emicklei/dot v1.0.0
 	github.com/emirpasic/gods v1.18.1
 	github.com/fjl/gencodec v0.0.0-20220412091415-8bb9e558978c
-	github.com/gballet/go-verkle v0.0.0-20220722103930-acd34254ebff
 	github.com/goccy/go-json v0.9.7
 	github.com/gofrs/flock v0.8.1
 	github.com/golang-jwt/jwt/v4 v4.4.1
@@ -175,10 +174,8 @@ require (
 )
 
 require (
-	github.com/alecthomas/atomic v0.1.0-alpha2 // indirect
-	github.com/crate-crypto/go-ipa v0.0.0-20220523130400-f11357ae11c7 // indirect
+	github.com/ethereum/go-ethereum v1.10.25 // indirect
 	github.com/ledgerwatch/interfaces v0.0.0-20220901131808-23c237c9b9a8 // indirect
-	gotest.tools/v3 v3.3.0 // indirect
 )
 
 replace github.com/ledgerwatch/erigon-lib => ./erigon-lib
