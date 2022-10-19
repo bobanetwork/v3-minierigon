@@ -31,6 +31,7 @@ require (
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/emicklei/dot v1.0.0
 	github.com/emirpasic/gods v1.18.1
+	github.com/ethereum/go-ethereum v1.10.25
 	github.com/ferranbt/fastssz v0.1.2
 	github.com/fjl/gencodec v0.0.0-20220412091415-8bb9e558978c
 	github.com/goccy/go-json v0.9.7
@@ -133,7 +134,7 @@ require (
 	github.com/mikioh/tcpinfo v0.0.0-20190314235526-30a79bb1804b // indirect
 	github.com/mikioh/tcpopt v0.0.0-20190314235656-172688c1accc // indirect
 	github.com/minio/sha256-simd v1.0.0 // indirect
-	github.com/mitchellh/mapstructure v1.3.2 // indirect
+	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.1.0 // indirect
@@ -253,11 +254,8 @@ require (
 	modernc.org/token v1.0.1 // indirect
 )
 
-require (
-	github.com/ethereum/go-ethereum v1.10.25 // indirect
-	github.com/ledgerwatch/interfaces v0.0.0-20220901131808-23c237c9b9a8 // indirect
-)
-
 replace github.com/ledgerwatch/erigon-lib => ./erigon-lib
-replace github.com/tendermint/tendermint => github.com/bnb-chain/tendermint v0.31.12
 
+replace github.com/ledgerwatch/interfaces => ./erigon-lib/interfaces
+
+replace github.com/tendermint/tendermint => github.com/bnb-chain/tendermint v0.31.12

@@ -30,9 +30,7 @@ import (
 	"github.com/ledgerwatch/erigon/turbo/services"
 	"github.com/ledgerwatch/erigon/turbo/shards"
 	"github.com/ledgerwatch/erigon/turbo/stages/headerdownload"
-	"github.com/ledgerwatch/log/v3"
-	"golang.org/x/exp/slices"
-	"google.golang.org/protobuf/types/known/emptypb"
+//	"google.golang.org/protobuf/types/known/emptypb"
 	"github.com/ledgerwatch/erigon/common/hexutil"
 )
 
