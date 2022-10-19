@@ -103,6 +103,8 @@ func StageMiningCreateBlockCfg(db kv.RwDB, miner MiningState, chainConfig params
 	}
 }
 
+var maxTransactions uint16 = 1000
+
 // SpawnMiningCreateBlockStage
 // TODO:
 // - resubmitAdjustCh - variable is not implemented
@@ -139,7 +141,8 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 	}
 
 	blockNum := executionAt + 1
-	var txs []types.Transaction
+	txSlots := types2.TxsRlp{}
+	var onTime bool
 	if err = cfg.txPool2DB.View(context.Background(), func(poolTx kv.Tx) error {
 		tmpSlots := types2.TxsRlp{}
 		if err := cfg.txPool2.Best(200, &tmpSlots, poolTx); err != nil {
@@ -191,11 +194,45 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 			// Check if tx nonce is too low
 			txs = append(txs, transaction)
 			txs[len(txs)-1].SetSender(sender)
+
+/* FIXME - Merge cleanup
+		var err error
+		counter := 0
+		for !onTime && counter < 1000 {
+			if onTime, err = cfg.txPool2.Best(maxTransactions, &txSlots, poolTx, executionAt); err != nil {
+				return err
+			}
+			time.Sleep(1 * time.Millisecond)
+			counter++
+		}
+*/
 		}
 		return nil
 	}); err != nil {
         	log.Debug("MMDBG SpawnMiningCreateBlockStage 2 returing", "err", err)
 		return err
+	}
+	var skipByChainIDMismatch uint64 = 0
+	var txs []types.Transaction //nolint:prealloc
+	for i := range txSlots.Txs {
+		s := rlp.NewStream(bytes.NewReader(txSlots.Txs[i]), uint64(len(txSlots.Txs[i])))
+
+		transaction, err := types.DecodeTransaction(s)
+		if err == io.EOF {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if transaction.GetChainID().ToBig().Uint64() != 0 && transaction.GetChainID().ToBig().Cmp(cfg.chainConfig.ChainID) != 0 {
+			skipByChainIDMismatch++
+			continue
+		}
+		var sender common.Address
+		copy(sender[:], txSlots.Senders.At(i))
+		// Check if tx nonce is too low
+		txs = append(txs, transaction)
+		txs[len(txs)-1].SetSender(sender)
 	}
 	log.Debug(fmt.Sprintf("[%s] Candidate txs", logPrefix), "amount", len(txs))
 	localUncles, remoteUncles, err := readNonCanonicalHeaders(tx, blockNum, cfg.engine, coinbase, txPoolLocals)
@@ -248,7 +285,7 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 	header.Coinbase = coinbase
 	header.Extra = cfg.miner.MiningConfig.ExtraData
 
-	txs, err = filterBadTransactions(tx, txs, cfg.chainConfig, blockNum, header.BaseFee)
+	txs, err = filterBadTransactions(tx, txs, cfg.chainConfig, blockNum, header.BaseFee, cfg.tmpdir)
 	if err != nil {
 		log.Debug("MMDBG SpawnMiningCreateBlockStage filterBadTx returing", "err", err)
 		return err
@@ -258,7 +295,7 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 	current.LocalTxs = types.NewTransactionsFixedOrder(nil)
 	log.Debug("MMDBG SpawnMiningCreateBlockStage continuing", "local", current.LocalTxs, "rmt", current.RemoteTxs) 
 
-	log.Info(fmt.Sprintf("[%s] Start mine", logPrefix), "block", executionAt+1, "baseFee", header.BaseFee, "gasLimit", header.GasLimit)
+	log.Info(fmt.Sprintf("[%s] Start mine", logPrefix), "block", executionAt+1, "baseFee", header.BaseFee, "gasLimit", header.GasLimit, "txs", len(txs))
 
 	stateReader := state.NewPlainStateReader(tx)
 	ibs := state.New(stateReader)
@@ -391,15 +428,22 @@ func readNonCanonicalHeaders(tx kv.Tx, blockNum uint64, engine consensus.Engine,
 	return
 }
 
-func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config params.ChainConfig, blockNumber uint64, baseFee *big.Int) ([]types.Transaction, error) {
+func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config params.ChainConfig, blockNumber uint64, baseFee *big.Int, tmpDir string) ([]types.Transaction, error) {
 	log.Debug("MMDBG entering filterBadTransactions")
-
+	initialCnt := len(transactions)
 	var filtered []types.Transaction
-	simulationTx := memdb.NewMemoryBatch(tx)
+	simulationTx := memdb.NewMemoryBatch(tx, tmpDir)
 	defer simulationTx.Rollback()
 	gasBailout := config.Consensus == params.ParliaConsensus
 
 	missedTxs := 0
+	noSenderCnt := 0
+	noAccountCnt := 0
+	nonceTooLowCnt := 0
+	notEOACnt := 0
+	feeTooLowCnt := 0
+	balanceTooLowCnt := 0
+	overflowCnt := 0
 	for len(transactions) > 0 && missedTxs != len(transactions) {
 		transaction := transactions[0]
 		log.Debug("MMDBG filterBadTransactions evaluating", "tx", transaction)
@@ -407,6 +451,7 @@ func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config pa
 		sender, ok := transaction.GetSender()
 		if !ok {
 			transactions = transactions[1:]
+			noSenderCnt++
 			continue
 		}
 		if int(transaction.Type()) == types2.DepositTxType {
@@ -424,11 +469,13 @@ func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config pa
 		}
 		if !ok {
 			transactions = transactions[1:]
+			noAccountCnt++
 			continue
 		}
 		// Check transaction nonce
 		if account.Nonce > transaction.GetNonce() {
 			transactions = transactions[1:]
+			nonceTooLowCnt++
 			continue
 		}
 		if account.Nonce < transaction.GetNonce() {
@@ -441,6 +488,7 @@ func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config pa
 		// Make sure the sender is an EOA (EIP-3607)
 		if !account.IsEmptyCodeHash() {
 			transactions = transactions[1:]
+			notEOACnt++
 			continue
 		}
 
@@ -453,6 +501,7 @@ func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config pa
 			if !transaction.GetFeeCap().IsZero() || !transaction.GetTip().IsZero() {
 				if err := core.CheckEip1559TxGasFeeCap(sender, transaction.GetFeeCap(), transaction.GetTip(), baseFee256); err != nil {
 					transactions = transactions[1:]
+					feeTooLowCnt++
 					continue
 				}
 			}
@@ -467,6 +516,7 @@ func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config pa
 		want, overflow := want.MulOverflow(want, txnPrice)
 		if overflow {
 			transactions = transactions[1:]
+			overflowCnt++
 			continue
 		}
 
@@ -475,11 +525,13 @@ func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config pa
 			want, overflow = want.MulOverflow(want, transaction.GetFeeCap())
 			if overflow {
 				transactions = transactions[1:]
+				overflowCnt++
 				continue
 			}
 			want, overflow = want.AddOverflow(want, value)
 			if overflow {
 				transactions = transactions[1:]
+				overflowCnt++
 				continue
 			}
 		}
@@ -487,6 +539,7 @@ func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config pa
 		if accountBalance.Cmp(want) < 0 {
 			if !gasBailout {
 				transactions = transactions[1:]
+				balanceTooLowCnt++
 				continue
 			}
 		}
@@ -503,5 +556,6 @@ func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config pa
 		transactions = transactions[1:]
 	}
 	log.Debug("MMDBG leaving filterBadTransactions", "filtered", filtered)
+	log.Debug("Filtration", "initial", initialCnt, "no sender", noSenderCnt, "no account", noAccountCnt, "nonce too low", nonceTooLowCnt, "nonceTooHigh", missedTxs, "sender not EOA", notEOACnt, "fee too low", feeTooLowCnt, "overflow", overflowCnt, "balance too low", balanceTooLowCnt, "filtered", len(filtered))
 	return filtered, nil
 }
