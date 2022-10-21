@@ -144,10 +144,9 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 	txSlots := types2.TxsRlp{}
 	var onTime bool
 	if err = cfg.txPool2DB.View(context.Background(), func(poolTx kv.Tx) error {
-		tmpSlots := types2.TxsRlp{}
-		
 		var err error
 		counter := 0
+		tmpSlots := types2.TxsRlp{}
 		for !onTime && counter < 1000 {
 			if onTime, err = cfg.txPool2.Best(maxTransactions, &tmpSlots, poolTx, executionAt); err != nil {
 				return err
@@ -155,10 +154,9 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 			time.Sleep(1 * time.Millisecond)
 			counter++
 		}
-
+		
                 log.Debug("MMDBG SpawnMiningCreateBlockStage before", "tmpSlots", tmpSlots, "deposits", cfg.deposits)
 		
-		txSlots := types2.TxsRlp{}
 		txSlots.Resize(uint(len(cfg.deposits) + len(tmpSlots.Txs)))
 
 		for i := range cfg.deposits {
@@ -177,43 +175,21 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 		}
 
         	log.Debug("MMDBG SpawnMiningCreateBlockStage after merge", "txSlots", txSlots)
-
-		var skipByChainIDMismatch uint64 = 0
-		var txs []types.Transaction //nolint:prealloc
-		for i := range txSlots.Txs {
-			s := rlp.NewStream(bytes.NewReader(txSlots.Txs[i]), uint64(len(txSlots.Txs[i])))
-                        log.Debug("MMDBG Candidate transaction", "i", i, "tx", txSlots.Txs[i], "s", s)
-
-			transaction, err := types.DecodeTransaction(s)
-                        log.Debug("MMDBG SpawnMiningCreateBlockStage Decoded", "err", err, "tx", transaction)
-			if err == io.EOF {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			if transaction.GetChainID().ToBig().Uint64() != 0 && transaction.GetChainID().ToBig().Cmp(cfg.chainConfig.ChainID) != 0 {
-				skipByChainIDMismatch++
-				continue
-			}
-			log.Debug("MMDBG processing", "i", i, "txSlots", txSlots)
-			var sender common.Address
-			copy(sender[:], txSlots.Senders.At(i))
-			// Check if tx nonce is too low
-			txs = append(txs, transaction)
-			txs[len(txs)-1].SetSender(sender)
-		}
+		
 		return nil
 	}); err != nil {
-        	log.Debug("MMDBG SpawnMiningCreateBlockStage 2 returing", "err", err)
 		return err
 	}
+	
 	var skipByChainIDMismatch uint64 = 0
 	var txs []types.Transaction //nolint:prealloc
 	for i := range txSlots.Txs {
 		s := rlp.NewStream(bytes.NewReader(txSlots.Txs[i]), uint64(len(txSlots.Txs[i])))
+                log.Debug("MMDBG Candidate transaction", "i", i, "tx", txSlots.Txs[i], "s", s)
 
 		transaction, err := types.DecodeTransaction(s)
+                log.Debug("MMDBG SpawnMiningCreateBlockStage Decoded", "err", err, "tx", transaction)
+
 		if err == io.EOF {
 			continue
 		}
@@ -224,6 +200,7 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 			skipByChainIDMismatch++
 			continue
 		}
+		log.Debug("MMDBG processing", "i", i, "txSlots", txSlots)
 		var sender common.Address
 		copy(sender[:], txSlots.Senders.At(i))
 		// Check if tx nonce is too low
