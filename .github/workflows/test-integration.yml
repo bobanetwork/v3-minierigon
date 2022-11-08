@@ -5,6 +5,7 @@ on:
       - devel
       - alpha
       - stable
+      - boba-develop
   schedule:
     - cron: '20 16 * * *' # daily at 16:20 UTC
 jobs:
