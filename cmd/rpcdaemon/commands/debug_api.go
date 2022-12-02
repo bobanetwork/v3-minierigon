@@ -19,6 +19,7 @@ import (
 	"github.com/ledgerwatch/erigon/rpc"
 	"github.com/ledgerwatch/erigon/turbo/transactions"
 	"github.com/ledgerwatch/log/v3"
+	"github.com/ledgerwatch/erigon/turbo/trie"
 )
 
 // AccountRangeMaxResults is the maximum number of results to be returned per call
@@ -256,8 +257,19 @@ func (api *PrivateDebugAPIImpl) AccountAt(ctx context.Context, blockHash common.
 }
 
 type AccountResult struct {
-	Balance  hexutil.Big    `json:"balance"`
-	Nonce    hexutil.Uint64 `json:"nonce"`
-	Code     hexutil.Bytes  `json:"code"`
-	CodeHash common.Hash    `json:"codeHash"`
+	Code         hexutil.Bytes   `json:"code"` // seemingly not needed on client, but for method above
+	AccountProof []hexutil.Bytes `json:"accountProof"`
+
+	Address     common.Address `json:"address"`
+	Balance     *hexutil.Big   `json:"balance"`
+	CodeHash    common.Hash    `json:"codeHash"`
+	Nonce       hexutil.Uint64 `json:"nonce"`
+	StorageHash common.Hash    `json:"storageHash"`
+	Root        common.Hash    `json:"root"` // possibly not needed
+	StorageProof []trie.StorageResult `json:"storageProof"`
 }
+//type StorageResult struct {
+//	Key   string       `json:"key"`
+//	Value *hexutil.Big `json:"value"`
+//	Proof []string     `json:"proof"`
+//}

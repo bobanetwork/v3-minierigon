@@ -4,28 +4,34 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
-
 	"github.com/holiman/uint256"
+	//"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/log/v3"
-	"google.golang.org/grpc"
-
+	//"github.com/ledgerwatch/erigon-lib/kv/memdb"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/core"
 	"github.com/ledgerwatch/erigon/core/state"
 	"github.com/ledgerwatch/erigon/core/types"
+	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/core/vm"
 	"github.com/ledgerwatch/erigon/crypto"
+	//"github.com/ledgerwatch/erigon/eth/stagedsync"
+	//"github.com/ledgerwatch/erigon/eth/stagedsync/stages"
 	"github.com/ledgerwatch/erigon/eth/tracers/logger"
 	"github.com/ledgerwatch/erigon/internal/ethapi"
 	"github.com/ledgerwatch/erigon/params"
 	"github.com/ledgerwatch/erigon/rpc"
 	"github.com/ledgerwatch/erigon/turbo/rpchelper"
 	"github.com/ledgerwatch/erigon/turbo/transactions"
+	"github.com/ledgerwatch/erigon/turbo/trie"
+	"github.com/ledgerwatch/log/v3"
+	"google.golang.org/grpc"
+	"math/big"
+	//"math/bits"
+	//"github.com/ledgerwatch/erigon/cmd/rpctest/rpctest"
 )
 
 // Call implements eth_call. Executes a new message call immediately without creating a transaction on the block chain.
@@ -274,10 +280,104 @@ func (api *APIImpl) EstimateGas(ctx context.Context, argsOrNil *ethapi.CallArgs,
 	return hexutil.Uint64(hi), nil
 }
 
-// GetProof not implemented
-func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storageKeys []string, blockNr rpc.BlockNumber) (*interface{}, error) {
-	var stub interface{}
-	return &stub, fmt.Errorf(NotImplemented, "eth_getProof")
+func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storageKeys []string, blockNr rpc.BlockNumber) (*AccountResult, error) {
+
+	log.Debug("MMGP GetProof", "addr", address, "stor", storageKeys, "BN", blockNr)
+
+	var acc2 accounts.Account
+	var aProof []hexutil.Bytes
+	var trRoot common.Hash
+	var sp []trie.StorageResult
+
+	sp = make([]trie.StorageResult, len(storageKeys))
+
+	tx, err := api.db.BeginRo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err != nil {
+		return nil, err
+	}
+
+	headBlock,err := rpchelper.GetLatestBlockNumber(tx)
+	
+	if blockNr == rpc.LatestBlockNumber || blockNr.Int64() == int64(headBlock) {
+		log.Debug("MMGP Will calculate GetProof for latest block number", "BN", blockNr, "head", headBlock)
+
+		rl := trie.NewRetainList(0)
+		addrHash, err := common.HashData(address[:])
+		if err != nil {
+			return nil, err
+		}
+		log.Debug("MMGP GetProof hashing account", "addr", address, "addrHash", addrHash)
+
+		rl.AddKey(addrHash[:])
+
+		loader := trie.NewFlatDBTrieLoader("getProof")
+
+		trace := true
+		if err := loader.Reset(rl, nil, nil, trace); err != nil {
+			return nil, err
+		}
+		log.Debug("MMGP GetProof loader.Reset", "err", err)
+
+		loader.SetProof(rl, &acc2, &aProof)
+
+		trRoot, err = loader.CalcTrieRoot(tx, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		log.Debug("MMGP GetProof CalcTrieRoot", "err", err, "trRoot", trRoot, "proof", aProof)
+
+		
+		if len(storageKeys) > 0 {
+			for idx,_ := range(storageKeys) {
+				sp[idx].Key = storageKeys[idx]
+			}
+			
+			err = loader.CalcStorageProof(tx, addrHash, acc2, &sp)
+			log.Debug("MMGP StorageResult", "newSP", sp, "err", err)
+		}
+	} else if blockNr.Int64() > 0 && address == common.HexToAddress("0x4200000000000000000000000000000000000016") && len(storageKeys) == 0 {
+		// Will check for a cached account proof. Storage proofs aren't currently supported for cached results.
+		block := uint64(blockNr.Int64())
+		// Check for a cached result
+		log.Debug("MMGP GetProof checking cache for", "BN", block)
+		gProofHack.lock.RLock()
+		if p,found := gProofHack.Proofs[block]; found {
+			aProof = p
+			acc2 = gProofHack.Accounts[block]
+			trRoot = gProofHack.Stateroots[block]
+		}
+		gProofHack.lock.RUnlock()
+		log.Debug("MMGP GetProof found cached result for", "block", block)
+	} else {
+		// Not a supported request.
+		return nil, fmt.Errorf(NotImplemented, "eth_getProof")	
+	}
+
+/*
+	if len(sp) == 0 {
+	  sp = make([]trie.StorageResult,1)
+	  sp[0].Key = "0x0000000000000000000000000000000000000000000000000000000000000000"
+	  sp[0].Value = new(hexutil.Big)
+	  sp[0].Proof = make([]string,0)
+	}
+*/
+	accRes := &AccountResult{
+		Balance:      (*hexutil.Big)(acc2.Balance.ToBig()),
+		CodeHash:     acc2.CodeHash,
+		Nonce:        hexutil.Uint64(acc2.Nonce),
+		Address:      address,
+		AccountProof: aProof,
+		StorageHash:  acc2.Root, //storageHash,
+		Root:         trRoot,
+		StorageProof: sp,
+	}
+	log.Debug("MMGP GetProof returning", "accRes", accRes)
+
+	return accRes, nil
 }
 
 // accessListResult returns an optional accesslist
