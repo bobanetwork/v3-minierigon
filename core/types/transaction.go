@@ -27,7 +27,10 @@ import (
 	"time"
 
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/log/v3"
+
 	"github.com/ledgerwatch/erigon/common"
+	"github.com/ledgerwatch/erigon/common/math"
 	"github.com/ledgerwatch/erigon/crypto"
 	"github.com/ledgerwatch/erigon/params"
 	"github.com/ledgerwatch/erigon/rlp"
@@ -464,8 +467,6 @@ func (t *TransactionsFixedOrder) Pop() {
 }
 
 // Message is a fully derived transaction and implements core.Message
-//
-// NOTE: In a future PR this will be removed.
 type Message struct {
 	sourceHash *common.Hash
 	to         *common.Address
@@ -480,10 +481,11 @@ type Message struct {
 	data       []byte
 	accessList AccessList
 	checkNonce bool
+	isFree     bool
 	isSystemTx bool
 }
 
-func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *uint256.Int, gasLimit uint64, gasPrice *uint256.Int, feeCap, tip *uint256.Int, data []byte, accessList AccessList, checkNonce bool) Message {
+func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *uint256.Int, gasLimit uint64, gasPrice *uint256.Int, feeCap, tip *uint256.Int, data []byte, accessList AccessList, checkNonce bool, isFree bool) Message {
 	m := Message{
 		from:       from,
 		to:         to,
@@ -493,6 +495,7 @@ func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *u
 		data:       data,
 		accessList: accessList,
 		checkNonce: checkNonce,
+		isFree:     isFree,
 	}
 	if gasPrice != nil {
 		m.gasPrice.Set(gasPrice)
@@ -521,4 +524,25 @@ func (m Message) CheckNonce() bool       { return m.checkNonce }
 func (m *Message) SetCheckNonce(checkNonce bool) {
 	m.checkNonce = checkNonce
 }
+func (m Message) IsFree() bool { return m.isFree }
+func (m *Message) SetIsFree(isFree bool) {
+	m.isFree = isFree
+}
+
+func (m *Message) ChangeGas(globalGasCap, desiredGas uint64) {
+	gas := globalGasCap
+	if gas == 0 {
+		gas = uint64(math.MaxUint64 / 2)
+	}
+	if desiredGas > 0 {
+		gas = desiredGas
+	}
+	if globalGasCap != 0 && globalGasCap < gas {
+		log.Warn("Caller gas above allowance, capping", "requested", gas, "cap", globalGasCap)
+		gas = globalGasCap
+	}
+
+	m.gasLimit = gas
+}
 func (m Message) IsSystemTx() bool       { return m.isSystemTx }
+
