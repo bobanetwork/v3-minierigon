@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"time"
 
@@ -149,7 +150,7 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 		counter := 0
 		tmpSlots := types2.TxsRlp{}
 		for !onTime && counter < 1000 {
-			if onTime, err = cfg.txPool2.Best(maxTransactions, &tmpSlots, poolTx, executionAt); err != nil {
+			if onTime, err = cfg.txPool2.Best(maxTransactions, &tmpSlots, poolTx, executionAt, math.MaxUint64); err != nil {
 				return err
 			}
 			time.Sleep(1 * time.Millisecond)

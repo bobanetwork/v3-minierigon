@@ -472,7 +472,7 @@ func (hb *HashBuilder) extensionHash(key []byte) error {
 		ni += 2
 	}
 	//capture := common.CopyBytes(branchHash[:length2.Hash+1])
-	if _, err := mmW.sha.Write(branchHash[:length2.Hash+1]); err != nil {
+	if _, err := mmW.Write(branchHash[:length2.Hash+1]); err != nil {
 		return err
 	}
 
@@ -579,7 +579,7 @@ func (hb *HashBuilder) branchHash(set uint16, doProof bool) error {
 
 	hb.b[0] = rlp.EmptyStringCode
 	for digit := uint(0); digit < 17; digit++ {
-		if ((1 << digit) & set) != 0 {=
+		if ((1 << digit) & set) != 0 {
 			if hashes[hashStackStride*i] == byte(0x80+length2.Hash) {
 				if hb.trace {
 					log.Debug("MMGP-5     HB writeHash", "hash", hexutil.Bytes(hashes[hashStackStride*i : hashStackStride*i+hashStackStride]))

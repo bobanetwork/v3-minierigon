@@ -16,7 +16,7 @@ import (
 	"github.com/ledgerwatch/erigon/rpc"
 	"github.com/ledgerwatch/erigon/turbo/adapter/ethapi"
 	"github.com/ledgerwatch/erigon/turbo/transactions"
-	"github.com/ledgerwatch/log/v3"
+	//"github.com/ledgerwatch/log/v3"
 	"github.com/ledgerwatch/erigon/turbo/trie"
 )
 

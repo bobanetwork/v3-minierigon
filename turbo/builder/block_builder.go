@@ -48,14 +48,12 @@ func NewBlockBuilder(build BlockBuilderFunc, param *core.BlockBuilderParameters)
 func NewBlockBuilderMM(
 	build BlockBuilderFunc,
 	param *core.BlockBuilderParameters,
-	emptyHeader *types.Header,
 	deposits [][]byte,
 	noTxPool bool,
 	mmChan chan int,
 	) *BlockBuilder {
 
 	b := new(BlockBuilder)
-	b.emptyHeader = emptyHeader
 	b.syncCond = sync.NewCond(new(sync.Mutex))
         
         param.Deposits = deposits

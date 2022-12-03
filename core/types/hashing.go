@@ -26,7 +26,7 @@ import (
 	"github.com/ledgerwatch/erigon/rlp"
 	"github.com/ledgerwatch/erigon/turbo/rlphacks"
 	"github.com/ledgerwatch/erigon/turbo/trie"
-	"golang.org/x/crypto/sha3"
+	//"golang.org/x/crypto/sha3"
 	"github.com/ledgerwatch/log/v3"
 )
 

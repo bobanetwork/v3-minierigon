@@ -597,7 +597,7 @@ func (s *EthBackendServer) engineForkChoiceUpdated(ctx context.Context, reqForkc
 		SafeBlockHash:      gointerfaces.ConvertH256ToHash(reqForkchoice.SafeBlockHash),
 		FinalizedBlockHash: gointerfaces.ConvertH256ToHash(reqForkchoice.FinalizedBlockHash),
 	}
-        log.Debug("MMDBG ethbackend.go EngineForkChoiceUpdatedV1 got", "req", req)
+        log.Debug("MMDBG ethbackend.go EngineForkChoiceUpdatedV1 got", "reqForkChoice", reqForkchoice)
 
 	status, err := s.getQuickPayloadStatusIfPossible(forkChoice.HeadBlockHash, 0, common.Hash{}, &forkChoice, false)
 	if err != nil {
@@ -619,7 +619,7 @@ func (s *EthBackendServer) engineForkChoiceUpdated(ctx context.Context, reqForkc
 			return nil, status.CriticalError
 		}
 	}
-        log.Debug("MMDBG EngineForkChoiceUpdatedV1 Payload", "status", status.Status, "attrs", req.PayloadAttributes)
+        log.Debug("MMDBG EngineForkChoiceUpdatedV1 Payload", "status", status.Status, "attrs", payloadAttributes)
 
 	// No need for payload building
 	if payloadAttributes == nil || status.Status != remote.EngineStatus_VALID {
@@ -660,8 +660,8 @@ func (s *EthBackendServer) engineForkChoiceUpdated(ctx context.Context, reqForkc
 	}
 
 	// Initiate payload building
-	log.Debug("MMDBG ethbackend.go Initiate payload building", "len", len(req.PayloadAttributes.Transactions), "depositTx", req.PayloadAttributes.Transactions)
-        hB := hexutil.Bytes(req.PayloadAttributes.Transactions[0])
+	log.Debug("MMDBG ethbackend.go Initiate payload building", "len", len(payloadAttributes.Transactions), "depositTx", payloadAttributes.Transactions)
+        hB := hexutil.Bytes(payloadAttributes.Transactions[0])
 	log.Debug("MMDBG ","hB", hB)
         
 	s.evictOldBuilders()
@@ -687,9 +687,8 @@ func (s *EthBackendServer) engineForkChoiceUpdated(ctx context.Context, reqForkc
 	builder := builder.NewBlockBuilderMM(
 		s.builderFunc, 
 		&param, 
-		emptyHeader, 
-		req.PayloadAttributes.Transactions,
-		req.PayloadAttributes.NoTxPool,
+		payloadAttributes.Transactions,
+		payloadAttributes.NoTxPool,
 		mmChan)
 
         
