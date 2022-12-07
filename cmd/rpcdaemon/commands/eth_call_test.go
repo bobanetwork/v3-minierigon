@@ -398,7 +398,7 @@ func prune(t *testing.T, db kv.RwDB, pruneTo uint64) {
 	err = tx.Commit()
 	assert.NoError(t, err)
 }
-/*
+
 func TestGetProof(t *testing.T) {
 	db := rpcdaemontest.CreateTestKV(t)
 	stateCache := kvcache.New(kvcache.DefaultCoherentConfig)
@@ -409,7 +409,7 @@ func TestGetProof(t *testing.T) {
 	var addr = common.HexToAddress("0x71562b71999873db5b286df957af199ec94617f7")
 	ethCallBlockNumber := rpc.LatestBlockNumber
 
-	// TODO: Maybe provide storageKeys to make it work!
+	// TODO: include Storage
 	//storageKeys := []string{"keyA", "keyB"}
 	storageKeys := []string{}
 	res, err := api.GetProof(context.Background(), addr, storageKeys, rpc.BlockNumberOrHashWithNumber(ethCallBlockNumber))
@@ -421,7 +421,7 @@ func TestGetProof(t *testing.T) {
 
 	//assert.Nil(t, t, res.Verify(res.Root)) // TODO: If this goes through, then client has different root
 }
-*/
+
 /*
 // Verify an account proof from the getProof RPC. See https://eips.ethereum.org/EIPS/eip-1186
 func (res *AccountResult) Verify(stateRoot common.Hash) error {

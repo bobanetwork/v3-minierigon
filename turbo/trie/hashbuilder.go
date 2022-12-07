@@ -283,7 +283,7 @@ func (hb *HashBuilder) accountLeaf(length int, keyHex []byte, balance *uint256.I
 	// Replace top of the stack
 	hb.nodeStack[len(hb.nodeStack)-1] = s
 
-	if hb.trace {
+	if hb.trace && a.storage != nil {
 		log.Debug("MMGP-5     HB AccountLeaf result", "s.Key", hexutil.Bytes(s.Key), "a", a, "s", s, "SR", a.storage, "ref", a.storage.reference())
 		fmt.Printf("Stack depth: %d\n", len(hb.nodeStack))
 	}
@@ -292,7 +292,9 @@ func (hb *HashBuilder) accountLeaf(length int, keyHex []byte, balance *uint256.I
 		hb.proofAccount.Initialised = a.Initialised
 		hb.proofAccount.Nonce = a.Nonce
 		hb.proofAccount.Balance = a.Balance
-		hb.proofAccount.Root = common.BytesToHash(a.storage.reference())
+		if a.storage != nil {
+			hb.proofAccount.Root = common.BytesToHash(a.storage.reference())
+		}
 		hb.proofAccount.CodeHash = a.CodeHash
 		hb.proofAccount.Incarnation = a.Incarnation
 		if hb.trace {
