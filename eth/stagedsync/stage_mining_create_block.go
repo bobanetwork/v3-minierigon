@@ -256,7 +256,15 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 		timestamp = cfg.blockBuilderParameters.Timestamp
 	}
 
-	header := core.MakeEmptyHeader(parent, &cfg.chainConfig, timestamp, &cfg.miner.MiningConfig.GasLimit)
+	log.Debug("MMDBG SpawnMiningCreateBlockStage", "tx0", txs[0], "oldGas", cfg.miner.MiningConfig.GasLimit, "newGas", txs[0].(*types.DepositTransaction).GetGas())
+	txGasLimit := txs[0].(*types.DepositTransaction).GetGas()
+	if txGasLimit == 150000000 {
+		// FIXME - Optimisim is presently sending 150M in the tx but expecting 15M in op-node
+		log.Warn("MMDBG Adjusting gas limit")
+		txGasLimit = 15000000
+	}
+	header := core.MakeEmptyHeader(parent, &cfg.chainConfig, timestamp, &txGasLimit)
+	//header := core.MakeEmptyHeader(parent, &cfg.chainConfig, timestamp, &cfg.miner.MiningConfig.GasLimit)
 	header.Coinbase = coinbase
 	header.Extra = cfg.miner.MiningConfig.ExtraData
 
