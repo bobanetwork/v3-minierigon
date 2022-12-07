@@ -304,9 +304,19 @@ func (api *APIImpl) EstimateGas(ctx context.Context, argsOrNil *ethapi2.CallArgs
 	return hexutil.Uint64(hi), nil
 }
 
-func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storageKeys []string, blockNr rpc.BlockNumber) (*AccountResult, error) {
+func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storageKeys []string, _blockNr rpc.BlockNumberOrHash) (*AccountResult, error) {
 
-	log.Debug("MMGP GetProof", "addr", address, "stor", storageKeys, "BN", blockNr)
+	tx, err := api.db.BeginRo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	blockNr, _, _, err := rpchelper.GetBlockNumber(_blockNr, tx, api.filters)
+	if err != nil {
+		return nil, err
+	}
+	log.Debug("MMGP GetProof", "addr", address, "stor", storageKeys, "_blockNr", _blockNr, "mapped_BN",blockNr)
 
 	var acc2 accounts.Account
 	var aProof []hexutil.Bytes
@@ -315,18 +325,9 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 
 	sp = make([]trie.StorageResult, len(storageKeys))
 
-	tx, err := api.db.BeginRo(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	if err != nil {
-		return nil, err
-	}
-
 	headBlock,err := rpchelper.GetLatestBlockNumber(tx)
 	
-	if blockNr == rpc.LatestBlockNumber || blockNr.Int64() == int64(headBlock) {
+	if blockNr == headBlock {
 		log.Debug("MMGP Will calculate GetProof for latest block number", "BN", blockNr, "head", headBlock)
 
 		rl := trie.NewRetainList(0)
@@ -363,19 +364,19 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 			err = loader.CalcStorageProof(tx, addrHash, acc2, &sp)
 			log.Debug("MMGP StorageResult", "newSP", sp, "err", err)
 		}
-	} else if blockNr.Int64() > 0 && address == common.HexToAddress("0x4200000000000000000000000000000000000016") && len(storageKeys) == 0 {
+	} else if blockNr > 0 && address == common.HexToAddress("0x4200000000000000000000000000000000000016") && len(storageKeys) == 0 {
 		// Will check for a cached account proof. Storage proofs aren't currently supported for cached results.
-		block := uint64(blockNr.Int64())
+		//block := uint64(blockNr)
 		// Check for a cached result
-		log.Debug("MMGP GetProof checking cache for", "BN", block)
+		log.Debug("MMGP GetProof checking cache for", "BN", blockNr)
 		gProofHack.lock.RLock()
-		if p,found := gProofHack.Proofs[block]; found {
+		if p,found := gProofHack.Proofs[blockNr]; found {
 			aProof = p
-			acc2 = gProofHack.Accounts[block]
-			trRoot = gProofHack.Stateroots[block]
+			acc2 = gProofHack.Accounts[blockNr]
+			trRoot = gProofHack.Stateroots[blockNr]
 		}
 		gProofHack.lock.RUnlock()
-		log.Debug("MMGP GetProof found cached result for", "block", block)
+		log.Debug("MMGP GetProof found cached result for", "block", blockNr)
 	} else {
 		// Not a supported request.
 		return nil, fmt.Errorf(NotImplemented, "eth_getProof")	
