@@ -37,6 +37,9 @@ type MiningBlock struct {
 
 	LocalTxs  types.TransactionsStream
 	RemoteTxs types.TransactionsStream
+
+        Deposits [][]byte
+	NoTxPool bool
 }
 
 type MiningState struct {
@@ -176,7 +179,12 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 		timestamp = cfg.blockBuilderParameters.Timestamp
 	}
 
-	header := core.MakeEmptyHeader(parent, &cfg.chainConfig, timestamp, &cfg.miner.MiningConfig.GasLimit)
+	//header := core.MakeEmptyHeader(parent, &cfg.chainConfig, timestamp, &cfg.miner.MiningConfig.GasLimit)
+	var newGas uint64
+	newGas = 15_000_000	// FIXME - extract from 1st Deposit tx
+	log.Debug("MMDBG Override gas limit", "old", cfg.miner.MiningConfig.GasLimit, "new", newGas)
+	header := core.MakeEmptyHeader(parent, &cfg.chainConfig, timestamp, &newGas)
+	
 	header.Coinbase = coinbase
 	header.Extra = cfg.miner.MiningConfig.ExtraData
 
@@ -203,6 +211,9 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 		current.Header = header
 		current.Uncles = nil
 		current.Withdrawals = cfg.blockBuilderParameters.Withdrawals
+		
+		current.Deposits = cfg.blockBuilderParameters.Deposits
+		current.NoTxPool = cfg.blockBuilderParameters.NoTxPool
 		return nil
 	}
 
@@ -315,6 +326,7 @@ func readNonCanonicalHeaders(tx kv.Tx, blockNum uint64, engine consensus.Engine,
 }
 
 func filterBadTransactions(transactions []types.Transaction, config params.ChainConfig, blockNumber uint64, baseFee *big.Int, simulationTx *memdb.MemoryMutation) ([]types.Transaction, error) {
+	log.Debug("MMDBG entering filterBadTransactions", "num", len(transactions))
 	initialCnt := len(transactions)
 	var filtered []types.Transaction
 	gasBailout := config.Consensus == params.ParliaConsensus
@@ -329,10 +341,19 @@ func filterBadTransactions(transactions []types.Transaction, config params.Chain
 	overflowCnt := 0
 	for len(transactions) > 0 && missedTxs != len(transactions) {
 		transaction := transactions[0]
+		log.Debug("MMDBG filterBadTransactions evaluating", "tx", transaction)
+
 		sender, ok := transaction.GetSender()
 		if !ok {
 			transactions = transactions[1:]
 			noSenderCnt++
+			continue
+		}
+		if int(transaction.Type()) == types.DepositTxType {
+			// FIXME - may need to include some of the later checks
+			log.Debug("MMDBG bypassing filterBadTransactions for Deposit tx")
+			filtered = append(filtered, transaction)
+			transactions = transactions[1:]
 			continue
 		}
 		var account accounts.Account
@@ -428,6 +449,7 @@ func filterBadTransactions(transactions []types.Transaction, config params.Chain
 		filtered = append(filtered, transaction)
 		transactions = transactions[1:]
 	}
+	log.Debug("MMDBG leaving filterBadTransactions", "filtered", filtered)
 	log.Debug("Filtration", "initial", initialCnt, "no sender", noSenderCnt, "no account", noAccountCnt, "nonce too low", nonceTooLowCnt, "nonceTooHigh", missedTxs, "sender not EOA", notEOACnt, "fee too low", feeTooLowCnt, "overflow", overflowCnt, "balance too low", balanceTooLowCnt, "filtered", len(filtered))
 	return filtered, nil
 }

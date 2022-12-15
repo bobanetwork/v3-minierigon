@@ -117,11 +117,41 @@ func SpawnMiningExecStage(s *StageState, tx kv.RwTx, cfg MiningExecCfg, quit <-c
 		killSwitch := 0
 		var cumLogs types.Logs
 
+		log.Debug("MMDBG SpawnMiningExecStage", "Prepared", current.PreparedTxs, "Deposits", current.Deposits, "NoTxPool", current.NoTxPool)
+
+		if current.Deposits != nil && len(current.Deposits) != 0 {
+		
+			var txs []types.Transaction
+			for i := range current.Deposits {
+				s := rlp.NewStream(bytes.NewReader(current.Deposits[i]), uint64(len(current.Deposits[i])))
+                		log.Debug("MMDBG Candidate transaction", "i", i, "tx", current.Deposits[i], "s", s)
+
+				transaction, err := types.DecodeTransaction(s)
+                		log.Debug("MMDBG Decoded", "err", err, "tx", transaction)
+				if err == io.EOF {
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				txs = append(txs, transaction)
+			}
+			depTS := types.NewTransactionsFixedOrder(txs)
+
+			logs, err := addTransactionsToMiningBlock(logPrefix, current, cfg.chainConfig, cfg.vmConfig, getHeader, cfg.engine, depTS, cfg.miningState.MiningConfig.Etherbase, ibs, quit, cfg.interrupt, cfg.payloadId)
+			log.Debug("MMDBG addTransactionsToMiningBlock (deposit)", "err", err, "logs", logs)
+			if err != nil {
+				return err
+			}
+			cumLogs = append(cumLogs, logs...)
+		}
+
 		// some code paths pre-load transactions such as from the integration tool
 		// we need to make sure these transactions are processed instead of
 		// looking in the pool
 		if current.PreparedTxs != nil && !current.PreparedTxs.Empty() {
 			logs, err := addTransactionsToMiningBlock(logPrefix, current, cfg.chainConfig, cfg.vmConfig, getHeader, cfg.engine, current.PreparedTxs, cfg.miningState.MiningConfig.Etherbase, ibs, quit, cfg.interrupt, cfg.payloadId)
+			log.Debug("MMDBG addTransactionsToMiningBlock (prepared)", "err", err, "logs", logs)
 			if err != nil {
 				return err
 			}
@@ -138,12 +168,14 @@ func SpawnMiningExecStage(s *StageState, tx kv.RwTx, cfg MiningExecCfg, quit <-c
 
 			for {
 				nextBatch, err := getNextTransactions(cfg, chainID, current.Header, 50, executionAt, simulationTx)
+				log.Debug("MMDBG addTransactionsToMiningBlock getNextTransactions", "nextBatch", nextBatch, "err", err)
 				if err != nil {
 					return err
 				}
 
 				if !nextBatch.Empty() {
 					logs, err := addTransactionsToMiningBlock(logPrefix, current, cfg.chainConfig, cfg.vmConfig, getHeader, cfg.engine, nextBatch, cfg.miningState.MiningConfig.Etherbase, ibs, quit, cfg.interrupt, cfg.payloadId)
+					log.Debug("MMDBG addTransactionsToMiningBlock (regular)", "err", err, "logs", logs)
 					if err != nil {
 						return err
 					}
