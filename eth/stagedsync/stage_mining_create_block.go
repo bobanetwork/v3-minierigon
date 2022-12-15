@@ -2,11 +2,8 @@ package stagedsync
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
-	"io"
-	"math"
 	"math/big"
 	"time"
 
@@ -16,7 +13,8 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
 	"github.com/ledgerwatch/erigon-lib/txpool"
-	types2 "github.com/ledgerwatch/erigon-lib/types"
+	"github.com/ledgerwatch/log/v3"
+
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/common/debug"
 	"github.com/ledgerwatch/erigon/consensus"
@@ -27,8 +25,6 @@ import (
 	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/eth/ethutils"
 	"github.com/ledgerwatch/erigon/params"
-	"github.com/ledgerwatch/erigon/rlp"
-	"github.com/ledgerwatch/log/v3"
 )
 
 type MiningBlock struct {
@@ -36,6 +32,7 @@ type MiningBlock struct {
 	Uncles      []*types.Header
 	Txs         types.Transactions
 	Receipts    types.Receipts
+	PreparedTxs types.TransactionsStream
 	Withdrawals []*types.Withdrawal
 
 	LocalTxs  types.TransactionsStream
@@ -78,19 +75,9 @@ type MiningCreateBlockCfg struct {
 	txPool2DB              kv.RoDB
 	tmpdir                 string
 	blockBuilderParameters *core.BlockBuilderParameters
-        deposits               [][]byte
-	noTxPool               bool
 }
 
 func StageMiningCreateBlockCfg(db kv.RwDB, miner MiningState, chainConfig params.ChainConfig, engine consensus.Engine, txPool2 *txpool.TxPool, txPool2DB kv.RoDB, blockBuilderParameters *core.BlockBuilderParameters, tmpdir string) MiningCreateBlockCfg {
-	var tmpDeposits [][]byte
-	var noTxPool    bool
-	
-	if blockBuilderParameters != nil {
-		tmpDeposits = blockBuilderParameters.Deposits
-		noTxPool = blockBuilderParameters.NoTxPool
-	}
-	
 	return MiningCreateBlockCfg{
 		db:                     db,
 		miner:                  miner,
@@ -100,8 +87,6 @@ func StageMiningCreateBlockCfg(db kv.RwDB, miner MiningState, chainConfig params
 		txPool2DB:              txPool2DB,
 		tmpdir:                 tmpdir,
 		blockBuilderParameters: blockBuilderParameters,
-		deposits:               tmpDeposits,
-		noTxPool:               noTxPool,
 	}
 }
 
@@ -125,6 +110,7 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 	if err != nil {
 		return fmt.Errorf("getting last executed block: %w", err)
 	}
+
 	parent := rawdb.ReadHeaderByNumber(tx, executionAt)
 	if parent == nil { // todo: how to return error and don't stop Erigon?
 		return fmt.Errorf("empty block %d", executionAt)
@@ -143,73 +129,6 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 	}
 
 	blockNum := executionAt + 1
-	txSlots := types2.TxsRlp{}
-	var onTime bool
-	if err = cfg.txPool2DB.View(context.Background(), func(poolTx kv.Tx) error {
-		var err error
-		counter := 0
-		tmpSlots := types2.TxsRlp{}
-		for !onTime && counter < 1000 {
-			if onTime, err = cfg.txPool2.Best(maxTransactions, &tmpSlots, poolTx, executionAt, math.MaxUint64); err != nil {
-				return err
-			}
-			time.Sleep(1 * time.Millisecond)
-			counter++
-		}
-		
-                log.Debug("MMDBG SpawnMiningCreateBlockStage before", "tmpSlots", tmpSlots, "deposits", cfg.deposits)
-		
-		txSlots.Resize(uint(len(cfg.deposits) + len(tmpSlots.Txs)))
-
-		for i := range cfg.deposits {
-		  txSlots.Txs[i] = cfg.deposits[i]
-		  copy(txSlots.Senders.At(i), (common.Address{}).Bytes())
-		  txSlots.IsLocal[i] = true
-		}
-		j := len(cfg.deposits)
-		
-		if !cfg.noTxPool {
-			for i := range tmpSlots.Txs {
-			  txSlots.Txs[i+j] = tmpSlots.Txs[i]
-			  copy(txSlots.Senders.At(i+j), tmpSlots.Senders.At(i))
-		 	 txSlots.IsLocal[i+j] = tmpSlots.IsLocal[i]
-			}
-		}
-
-        	log.Debug("MMDBG SpawnMiningCreateBlockStage after merge", "txSlots", txSlots)
-		
-		return nil
-	}); err != nil {
-		return err
-	}
-	
-	var skipByChainIDMismatch uint64 = 0
-	var txs []types.Transaction //nolint:prealloc
-	for i := range txSlots.Txs {
-		s := rlp.NewStream(bytes.NewReader(txSlots.Txs[i]), uint64(len(txSlots.Txs[i])))
-                log.Debug("MMDBG Candidate transaction", "i", i, "tx", txSlots.Txs[i], "s", s)
-
-		transaction, err := types.DecodeTransaction(s)
-                log.Debug("MMDBG SpawnMiningCreateBlockStage Decoded", "err", err, "tx", transaction)
-
-		if err == io.EOF {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if transaction.GetChainID().ToBig().Uint64() != 0 && transaction.GetChainID().ToBig().Cmp(cfg.chainConfig.ChainID) != 0 {
-			skipByChainIDMismatch++
-			continue
-		}
-		log.Debug("MMDBG processing", "i", i, "txSlots", txSlots)
-		var sender common.Address
-		copy(sender[:], txSlots.Senders.At(i))
-		// Check if tx nonce is too low
-		txs = append(txs, transaction)
-		txs[len(txs)-1].SetSender(sender)
-	}
-	log.Debug(fmt.Sprintf("[%s] Candidate txs", logPrefix), "amount", len(txs))
 	localUncles, remoteUncles, err := readNonCanonicalHeaders(tx, blockNum, cfg.engine, coinbase, txPoolLocals)
 	if err != nil {
 		return err
@@ -231,6 +150,7 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 		}
 		return
 	}
+
 	type envT struct {
 		signer    *types.Signer
 		ancestors mapset.Set // ancestor set (used for checking uncle parent validity)
@@ -256,29 +176,11 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 		timestamp = cfg.blockBuilderParameters.Timestamp
 	}
 
-	log.Debug("MMDBG SpawnMiningCreateBlockStage", "tx0", txs[0], "oldGas", cfg.miner.MiningConfig.GasLimit, "newGas", txs[0].(*types.DepositTransaction).GetGas())
-	txGasLimit := txs[0].(*types.DepositTransaction).GetGas()
-	if txGasLimit == 150000000 {
-		// FIXME - Optimisim is presently sending 150M in the tx but expecting 15M in op-node
-		log.Warn("MMDBG Adjusting gas limit")
-		txGasLimit = 15000000
-	}
-	header := core.MakeEmptyHeader(parent, &cfg.chainConfig, timestamp, &txGasLimit)
-	//header := core.MakeEmptyHeader(parent, &cfg.chainConfig, timestamp, &cfg.miner.MiningConfig.GasLimit)
+	header := core.MakeEmptyHeader(parent, &cfg.chainConfig, timestamp, &cfg.miner.MiningConfig.GasLimit)
 	header.Coinbase = coinbase
 	header.Extra = cfg.miner.MiningConfig.ExtraData
 
-	txs, err = filterBadTransactions(tx, txs, cfg.chainConfig, blockNum, header.BaseFee, cfg.tmpdir)
-	if err != nil {
-		log.Debug("MMDBG SpawnMiningCreateBlockStage filterBadTx returing", "err", err)
-		return err
-	}
-	current.RemoteTxs = types.NewTransactionsFixedOrder(txs)
-	// txpool v2 - doesn't prioritise local txs over remote
-	current.LocalTxs = types.NewTransactionsFixedOrder(nil)
-	log.Debug("MMDBG SpawnMiningCreateBlockStage continuing", "local", current.LocalTxs, "rmt", current.RemoteTxs) 
-
-	log.Info(fmt.Sprintf("[%s] Start mine", logPrefix), "block", executionAt+1, "baseFee", header.BaseFee, "gasLimit", header.GasLimit, "txs", len(txs))
+	log.Info(fmt.Sprintf("[%s] Start mine", logPrefix), "block", executionAt+1, "baseFee", header.BaseFee, "gasLimit", header.GasLimit)
 
 	stateReader := state.NewPlainStateReader(tx)
 	ibs := state.New(stateReader)
@@ -304,7 +206,6 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 		return nil
 	}
 
-	log.Debug("MMDBG before daoBlock check (cfg.blockBuilderParameters == nil)")
 	// If we are care about TheDAO hard-fork check whether to override the extra-data or not
 	if daoBlock := cfg.chainConfig.DAOForkBlock; daoBlock != nil {
 		// Check whether the block is among the fork extra-override range
@@ -413,12 +314,9 @@ func readNonCanonicalHeaders(tx kv.Tx, blockNum uint64, engine consensus.Engine,
 	return
 }
 
-func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config params.ChainConfig, blockNumber uint64, baseFee *big.Int, tmpDir string) ([]types.Transaction, error) {
-	log.Debug("MMDBG entering filterBadTransactions")
+func filterBadTransactions(transactions []types.Transaction, config params.ChainConfig, blockNumber uint64, baseFee *big.Int, simulationTx *memdb.MemoryMutation) ([]types.Transaction, error) {
 	initialCnt := len(transactions)
 	var filtered []types.Transaction
-	simulationTx := memdb.NewMemoryBatch(tx, tmpDir)
-	defer simulationTx.Rollback()
 	gasBailout := config.Consensus == params.ParliaConsensus
 
 	missedTxs := 0
@@ -431,22 +329,12 @@ func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config pa
 	overflowCnt := 0
 	for len(transactions) > 0 && missedTxs != len(transactions) {
 		transaction := transactions[0]
-		log.Debug("MMDBG filterBadTransactions evaluating", "tx", transaction)
-		
 		sender, ok := transaction.GetSender()
 		if !ok {
 			transactions = transactions[1:]
 			noSenderCnt++
 			continue
 		}
-		if int(transaction.Type()) == types2.DepositTxType {
-			// FIXME - may need to include some of the later checks
-			log.Debug("MMDBG bypassing filterBadTransactions for Deposit tx")
-			filtered = append(filtered, transaction)
-			transactions = transactions[1:]
-			continue
-		}
-			
 		var account accounts.Account
 		ok, err := rawdb.ReadAccount(simulationTx, sender, &account)
 		if err != nil {
@@ -540,7 +428,6 @@ func filterBadTransactions(tx kv.Tx, transactions []types.Transaction, config pa
 		filtered = append(filtered, transaction)
 		transactions = transactions[1:]
 	}
-	log.Debug("MMDBG leaving filterBadTransactions", "filtered", filtered)
 	log.Debug("Filtration", "initial", initialCnt, "no sender", noSenderCnt, "no account", noAccountCnt, "nonce too low", nonceTooLowCnt, "nonceTooHigh", missedTxs, "sender not EOA", notEOACnt, "fee too low", feeTooLowCnt, "overflow", overflowCnt, "balance too low", balanceTooLowCnt, "filtered", len(filtered))
 	return filtered, nil
 }

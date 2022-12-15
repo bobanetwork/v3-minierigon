@@ -1,15 +1,24 @@
 package stagedsync
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"sync/atomic"
 	"time"
 
+	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/net/context"
+
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/log/v3"
+	"github.com/ledgerwatch/erigon-lib/kv/memdb"
+	"github.com/ledgerwatch/erigon-lib/txpool"
+	types2 "github.com/ledgerwatch/erigon-lib/types"
 
+	"github.com/ledgerwatch/erigon/rlp"
 	"github.com/ledgerwatch/erigon/turbo/services"
 
 	"github.com/ledgerwatch/erigon/common"
@@ -37,6 +46,8 @@ type MiningExecCfg struct {
 	tmpdir      string
 	interrupt   *int32
 	payloadId   uint64
+	txPool2     *txpool.TxPool
+	txPool2DB   kv.RoDB
 }
 
 func StageMiningExecCfg(
@@ -49,6 +60,8 @@ func StageMiningExecCfg(
 	tmpdir string,
 	interrupt *int32,
 	payloadId uint64,
+	txPool2 *txpool.TxPool,
+	txPool2DB kv.RoDB,
 ) MiningExecCfg {
 	return MiningExecCfg{
 		db:          db,
@@ -61,6 +74,8 @@ func StageMiningExecCfg(
 		tmpdir:      tmpdir,
 		interrupt:   interrupt,
 		payloadId:   payloadId,
+		txPool2:     txPool2,
+		txPool2DB:   txPool2DB,
 	}
 }
 
@@ -69,10 +84,9 @@ func StageMiningExecCfg(
 // - resubmitAdjustCh - variable is not implemented
 func SpawnMiningExecStage(s *StageState, tx kv.RwTx, cfg MiningExecCfg, quit <-chan struct{}) error {
 	cfg.vmConfig.NoReceipts = false
+	chainID, _ := uint256.FromBig(cfg.chainConfig.ChainID)
 	logPrefix := s.LogPrefix()
 	current := cfg.miningState.MiningBlock
-	localTxs := current.LocalTxs
-	remoteTxs := current.RemoteTxs
 	noempty := true
 
 	stateReader := state.NewPlainStateReader(tx)
@@ -91,41 +105,72 @@ func SpawnMiningExecStage(s *StageState, tx kv.RwTx, cfg MiningExecCfg, quit <-c
 	}
 
 	getHeader := func(hash common.Hash, number uint64) *types.Header { return rawdb.ReadHeader(tx, hash, number) }
+	executionAt, err := s.ExecutionAt(tx)
+	if err != nil {
+		return err
+	}
 
 	// Short circuit if there is no available pending transactions.
 	// But if we disable empty precommit already, ignore it. Since
 	// empty block is necessary to keep the liveness of the network.
-	log.Debug("MMDBG stage_mining_exec 1")
 	if noempty {
-		if !localTxs.Empty() {
-			logs, err := addTransactionsToMiningBlock(logPrefix, current, cfg.chainConfig, cfg.vmConfig, getHeader, cfg.engine, localTxs, cfg.miningState.MiningConfig.Etherbase, ibs, quit, cfg.interrupt, cfg.payloadId)
-			log.Debug("MMDBG stage_mining_exec added local txns", "err", err)
+		killSwitch := 0
+		var cumLogs types.Logs
+
+		// some code paths pre-load transactions such as from the integration tool
+		// we need to make sure these transactions are processed instead of
+		// looking in the pool
+		if current.PreparedTxs != nil && !current.PreparedTxs.Empty() {
+			logs, err := addTransactionsToMiningBlock(logPrefix, current, cfg.chainConfig, cfg.vmConfig, getHeader, cfg.engine, current.PreparedTxs, cfg.miningState.MiningConfig.Etherbase, ibs, quit, cfg.interrupt, cfg.payloadId)
 			if err != nil {
 				return err
 			}
-			// We don't push the pendingLogsEvent while we are mining. The reason is that
-			// when we are mining, the worker will regenerate a mining block every 3 seconds.
-			// In order to avoid pushing the repeated pendingLog, we disable the pending log pushing.
-			//if !w.isRunning() {
-			NotifyPendingLogs(logPrefix, cfg.notifier, logs)
-			//}
-		}
-		if !remoteTxs.Empty() {
-			logs, err := addTransactionsToMiningBlock(logPrefix, current, cfg.chainConfig, cfg.vmConfig, getHeader, cfg.engine, remoteTxs, cfg.miningState.MiningConfig.Etherbase, ibs, quit, cfg.interrupt, cfg.payloadId)
-			log.Debug("MMDBG stage_mining_exec added remote txns", "err", err)
-			if err != nil {
-				return err
+			cumLogs = append(cumLogs, logs...)
+		} else {
+			// keep looping until we're out of gas for the block or the txpool has nothing left
+
+			simulationTx := memdb.NewMemoryBatch(tx, cfg.tmpdir)
+			defer simulationTx.Rollback()
+
+			// a state update could have happened between requests to mine so we need to reset the txpool yielded
+			// state to ensure we're always working with the complete set of TXs from the pool
+			cfg.txPool2.ResetYieldedStatus()
+
+			for {
+				nextBatch, err := getNextTransactions(cfg, chainID, current.Header, 50, executionAt, simulationTx)
+				if err != nil {
+					return err
+				}
+
+				if !nextBatch.Empty() {
+					logs, err := addTransactionsToMiningBlock(logPrefix, current, cfg.chainConfig, cfg.vmConfig, getHeader, cfg.engine, nextBatch, cfg.miningState.MiningConfig.Etherbase, ibs, quit, cfg.interrupt, cfg.payloadId)
+					if err != nil {
+						return err
+					}
+					cumLogs = append(cumLogs, logs...)
+					log.Debug(fmt.Sprintf("[%s] Added transactions to mining block", logPrefix), "count", len(logs), "gas_remaining", current.Header.GasLimit-current.Header.GasUsed)
+
+				} else {
+					break
+				}
+				killSwitch++
+				if killSwitch >= 1000 {
+					log.Debug(fmt.Sprintf("[%s] Mining exec killswitch limit hit", logPrefix))
+					break
+				}
 			}
-			// We don't push the pendingLogsEvent while we are mining. The reason is that
-			// when we are mining, the worker will regenerate a mining block every 3 seconds.
-			// In order to avoid pushing the repeated pendingLog, we disable the pending log pushing.
-			//if !w.isRunning() {
-			NotifyPendingLogs(logPrefix, cfg.notifier, logs)
-			//}
 		}
+
+		// We don't push the pendingLogsEvent while we are mining. The reason is that
+		// when we are mining, the worker will regenerate a mining block every 3 seconds.
+		// In order to avoid pushing the repeated pendingLog, we disable the pending log pushing.
+		//if !w.isRunning() {
+		//}
+		log.Info(fmt.Sprintf("[%s] Mined transactions", logPrefix), "count", len(current.Txs), "gas_used", current.Header.GasUsed)
+		NotifyPendingLogs(logPrefix, cfg.notifier, cumLogs)
 	}
 
-	log.Debug("SpawnMiningExecStage", "block txn", current.Txs.Len(), "remote txn", current.RemoteTxs.Empty(), "payload", cfg.payloadId)
+	log.Debug("SpawnMiningExecStage", "block txn", current.Txs.Len(), "payload", cfg.payloadId)
 	if current.Uncles == nil {
 		current.Uncles = []*types.Header{}
 	}
@@ -135,13 +180,9 @@ func SpawnMiningExecStage(s *StageState, tx kv.RwTx, cfg MiningExecCfg, quit <-c
 	if current.Receipts == nil {
 		current.Receipts = types.Receipts{}
 	}
-	log.Debug("MMDBG stage_mining_exec 2", "header", current.Header)
 
-	var err error
 	_, current.Txs, current.Receipts, err = core.FinalizeBlockExecution(cfg.engine, stateReader, current.Header, current.Txs, current.Uncles, stateWriter,
-		&cfg.chainConfig, ibs, current.Receipts, current.Withdrawals, epochReader{tx: tx}, chainReader{config: &cfg.chainConfig, tx: tx, blockReader: cfg.blockReader}, true)
-	log.Debug("MMDBG stage_mining_exec 3", "err", err)
-	
+		&cfg.chainConfig, ibs, current.Receipts, current.Withdrawals, EpochReaderImpl{tx: tx}, ChainReaderImpl{config: &cfg.chainConfig, tx: tx, blockReader: cfg.blockReader}, true)
 	if err != nil {
 		return err
 	}
@@ -182,10 +223,71 @@ func SpawnMiningExecStage(s *StageState, tx kv.RwTx, cfg MiningExecCfg, quit <-c
 	return nil
 }
 
+func getNextTransactions(
+	cfg MiningExecCfg,
+	chainID *uint256.Int,
+	header *types.Header,
+	amount uint16,
+	executionAt uint64,
+	simulationTx *memdb.MemoryMutation,
+) (types.TransactionsStream, error) {
+	txSlots := types2.TxsRlp{}
+	var onTime bool
+	if err := cfg.txPool2DB.View(context.Background(), func(poolTx kv.Tx) error {
+		var err error
+		counter := 0
+		for !onTime && counter < 1000 {
+			remainingGas := header.GasLimit - header.GasUsed
+			if onTime, err = cfg.txPool2.YieldBest(amount, &txSlots, poolTx, executionAt, remainingGas); err != nil {
+				return err
+			}
+			time.Sleep(1 * time.Millisecond)
+			counter++
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	var txs []types.Transaction //nolint:prealloc
+	reader := bytes.NewReader([]byte{})
+	stream := new(rlp.Stream)
+	for i := range txSlots.Txs {
+		reader.Reset(txSlots.Txs[i])
+		stream.Reset(reader, uint64(len(txSlots.Txs[i])))
+
+		transaction, err := types.DecodeTransaction(stream)
+		if err == io.EOF {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !transaction.GetChainID().IsZero() && transaction.GetChainID().Cmp(chainID) != 0 {
+			continue
+		}
+
+		var sender common.Address
+		copy(sender[:], txSlots.Senders.At(i))
+
+		// Check if tx nonce is too low
+		txs = append(txs, transaction)
+		txs[len(txs)-1].SetSender(sender)
+	}
+
+	blockNum := executionAt + 1
+	txs, err := filterBadTransactions(txs, cfg.chainConfig, blockNum, header.BaseFee, simulationTx)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewTransactionsFixedOrder(txs), nil
+}
+
 func addTransactionsToMiningBlock(logPrefix string, current *MiningBlock, chainConfig params.ChainConfig, vmConfig *vm.Config, getHeader func(hash common.Hash, number uint64) *types.Header, engine consensus.Engine, txs types.TransactionsStream, coinbase common.Address, ibs *state.IntraBlockState, quit <-chan struct{}, interrupt *int32, payloadId uint64) (types.Logs, error) {
 	header := current.Header
 	tcount := 0
-	gasPool := new(core.GasPool).AddGas(current.Header.GasLimit)
+	gasPool := new(core.GasPool).AddGas(header.GasLimit - header.GasUsed)
 	signer := types.MakeSigner(&chainConfig, header.Number.Uint64())
 
 	var coalescedLogs types.Logs
@@ -198,13 +300,11 @@ func addTransactionsToMiningBlock(logPrefix string, current *MiningBlock, chainC
 		log.Debug("addTransactionsToMiningBlock", "txn hash", txn.Hash())
 		receipt, _, err := core.ApplyTransaction(&chainConfig, core.GetHashFn(header, getHeader), engine, &coinbase, gasPool, ibs, noop, header, txn, &header.GasUsed, *vmConfig)
 		if err != nil {
-			log.Debug("MMDBG addTransactionsToMiningBlock reverting", "txn", txn)
 			ibs.RevertToSnapshot(snap)
 			gasPool = new(core.GasPool).AddGas(gasSnap) // restore gasPool as well as ibs
 			return nil, err
 		}
 
-		log.Debug("MMDBG addTransactionsToMiningBlock adding", "txn", txn)
 		current.Txs = append(current.Txs, txn)
 		current.Receipts = append(current.Receipts, receipt)
 		return receipt.Logs, nil
@@ -265,11 +365,7 @@ LOOP:
 		}
 
 		// Start executing the transaction
-		//ibs.Prepare(txn.Hash(), common.Hash{}, tcount) // FIXME - still needed?
-		log.Debug("MMDBG stage_mining_exec prepared", "tcount", tcount, "txn", txn)
-		
 		logs, err := miningCommitTx(txn, coinbase, vmConfig, chainConfig, ibs, current)
-		log.Debug("MMDBG stage_mining_exec result", "err", err, "logs", logs)
 
 		if errors.Is(err, core.ErrGasLimitReached) {
 			// Pop the env out-of-gas transaction without shifting in the next from the account

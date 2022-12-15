@@ -235,8 +235,8 @@ type Config struct {
 	WithoutHeimdall bool
 	// Ethstats service
 	Ethstats string
-	// ConsenSUS layer
-	CL                          bool
+	// Consensus layer
+	ExternalCL                  bool
 	LightClientDiscoveryAddr    string
 	LightClientDiscoveryPort    uint64
 	LightClientDiscoveryTCPPort uint64
@@ -265,7 +265,6 @@ var ChainsWithSnapshots = map[string]struct{}{
 	networkname.MainnetChainName:    {},
 	networkname.BSCChainName:        {},
 	networkname.GoerliChainName:     {},
-	networkname.RopstenChainName:    {},
 	networkname.MumbaiChainName:     {},
 	networkname.BorMainnetChainName: {},
 	networkname.GnosisChainName:     {},

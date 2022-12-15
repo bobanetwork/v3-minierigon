@@ -22,6 +22,7 @@ import (
 	"github.com/ledgerwatch/erigon/turbo/stages/headerdownload"
 	"github.com/ledgerwatch/erigon/turbo/trie"
 	"github.com/ledgerwatch/log/v3"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 )
 
@@ -94,10 +95,19 @@ func SpawnIntermediateHashesStage(s *StageState, u Unwinder, tx kv.RwTx, cfg Tri
 	if !quiet && to > s.BlockNumber+16 {
 		log.Info(fmt.Sprintf("[%s] Generating intermediate hashes", logPrefix), "from", s.BlockNumber, "to", to)
 	}
+
 	var root common.Hash
 	tooBigJump := to > s.BlockNumber && to-s.BlockNumber > 100_000 // RetainList is in-memory structure and it will OOM if jump is too big, such big jump anyway invalidate most of existing Intermediate hashes
+	if !tooBigJump && cfg.historyV3 && to-s.BlockNumber > 10 {
+		//incremental can work only on DB data, not on snapshots
+		_, n, err := rawdb.TxNums.FindBlockNum(tx, cfg.agg.EndTxNumMinimax())
+		if err != nil {
+			return trie.EmptyRoot, err
+		}
+		tooBigJump = s.BlockNumber < n
+	}
 	if s.BlockNumber == 0 || tooBigJump {
-		if root, err = RegenerateIntermediateHashes(logPrefix, tx, cfg, expectedRootHash, quit); err != nil {
+		if root, err = RegenerateIntermediateHashes(logPrefix, tx, cfg, expectedRootHash, ctx); err != nil {
 			return trie.EmptyRoot, err
 		}
 	} else {
@@ -132,11 +142,13 @@ func SpawnIntermediateHashesStage(s *StageState, u Unwinder, tx kv.RwTx, cfg Tri
 	return root, err
 }
 
-func RegenerateIntermediateHashes(logPrefix string, db kv.RwTx, cfg TrieCfg, expectedRootHash common.Hash, quit <-chan struct{}) (common.Hash, error) {
+func RegenerateIntermediateHashes(logPrefix string, db kv.RwTx, cfg TrieCfg, expectedRootHash common.Hash, ctx context.Context) (common.Hash, error) {
 	log.Info(fmt.Sprintf("[%s] Regeneration trie hashes started", logPrefix))
 	defer log.Info(fmt.Sprintf("[%s] Regeneration ended", logPrefix))
 	_ = db.ClearBucket(kv.TrieOfAccounts)
 	_ = db.ClearBucket(kv.TrieOfStorage)
+	kv.ReadAhead(ctx, cfg.db, atomic.NewBool(false), kv.HashedAccounts, nil, math.MaxUint32)
+	kv.ReadAhead(ctx, cfg.db, atomic.NewBool(false), kv.HashedStorage, nil, math.MaxUint32)
 
 	accTrieCollector := etl.NewCollector(logPrefix, cfg.tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer accTrieCollector.Close()
@@ -150,7 +162,7 @@ func RegenerateIntermediateHashes(logPrefix string, db kv.RwTx, cfg TrieCfg, exp
 	if err := loader.Reset(trie.NewRetainList(0), accTrieCollectorFunc, stTrieCollectorFunc, false); err != nil {
 		return trie.EmptyRoot, err
 	}
-	hash, err := loader.CalcTrieRoot(db, []byte{}, quit)
+	hash, err := loader.CalcTrieRoot(db, []byte{}, ctx.Done())
 	if err != nil {
 		return trie.EmptyRoot, err
 	}
@@ -160,10 +172,10 @@ func RegenerateIntermediateHashes(logPrefix string, db kv.RwTx, cfg TrieCfg, exp
 	}
 	log.Info(fmt.Sprintf("[%s] Trie root", logPrefix), "hash", hash.Hex())
 
-	if err := accTrieCollector.Load(db, kv.TrieOfAccounts, etl.IdentityLoadFunc, etl.TransformArgs{Quit: quit}); err != nil {
+	if err := accTrieCollector.Load(db, kv.TrieOfAccounts, etl.IdentityLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return trie.EmptyRoot, err
 	}
-	if err := stTrieCollector.Load(db, kv.TrieOfStorage, etl.IdentityLoadFunc, etl.TransformArgs{Quit: quit}); err != nil {
+	if err := stTrieCollector.Load(db, kv.TrieOfStorage, etl.IdentityLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return trie.EmptyRoot, err
 	}
 	return hash, nil
@@ -191,7 +203,6 @@ func (p *HashPromoter) PromoteOnHistoryV3(logPrefix string, agg *state.Aggregato
 	nonEmptyMarker := []byte{1}
 
 	agg.SetTx(p.tx)
-	var k, v []byte
 
 	txnFrom, err := rawdb.TxNums.Min(p.tx, from+1)
 	if err != nil {
@@ -201,10 +212,7 @@ func (p *HashPromoter) PromoteOnHistoryV3(logPrefix string, agg *state.Aggregato
 
 	if storage {
 		compositeKey := make([]byte, length.Hash+length.Hash)
-		it := agg.Storage().MakeContext().IterateChanged(txnFrom, txnTo, p.tx)
-		defer it.Close()
-		for it.HasNext() {
-			k, v = it.Next(k[:0], v[:0])
+		if err := agg.Storage().MakeContext().IterateRecentlyChanged(txnFrom, txnTo, p.tx, func(k []byte, v []byte) error {
 			addrHash, err := common.HashData(k[:length.Addr])
 			if err != nil {
 				return err
@@ -221,14 +229,14 @@ func (p *HashPromoter) PromoteOnHistoryV3(logPrefix string, agg *state.Aggregato
 			if err := load(compositeKey, v); err != nil {
 				return err
 			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		return nil
 	}
 
-	it := agg.Accounts().MakeContext().IterateChanged(txnFrom, txnTo, p.tx)
-	defer it.Close()
-	for it.HasNext() {
-		k, v = it.Next(k[:0], v[:0])
+	if err := agg.Accounts().MakeContext().IterateRecentlyChanged(txnFrom, txnTo, p.tx, func(k []byte, v []byte) error {
 		newK, err := transformPlainStateKey(k)
 		if err != nil {
 			return err
@@ -239,6 +247,9 @@ func (p *HashPromoter) PromoteOnHistoryV3(logPrefix string, agg *state.Aggregato
 		if err := load(newK, v); err != nil {
 			return err
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	return nil
 }
@@ -340,13 +351,9 @@ func (p *HashPromoter) UnwindOnHistoryV3(logPrefix string, agg *state.Aggregator
 	}
 	txnTo := uint64(math.MaxUint64)
 	var deletedAccounts [][]byte
-	var k, v []byte
 
 	if storage {
-		it := agg.Storage().MakeContext().IterateChanged(txnFrom, txnTo, p.tx)
-		defer it.Close()
-		for it.HasNext() {
-			k, v = it.Next(k[:0], v[:0])
+		if err = agg.Storage().MakeContext().IterateRecentlyChanged(txnFrom, txnTo, p.tx, func(k []byte, v []byte) error {
 			// Plain state not unwind yet, it means - if key not-exists in PlainState but has value from ChangeSets - then need mark it as "created" in RetainList
 			enc, err := p.tx.GetOne(kv.PlainState, k[:20])
 			if err != nil {
@@ -367,15 +374,13 @@ func (p *HashPromoter) UnwindOnHistoryV3(logPrefix string, agg *state.Aggregator
 				return err
 			}
 			load(newK, value)
+			return nil
+		}); err != nil {
+			return err
 		}
 		return nil
 	}
-
-	it := agg.Accounts().MakeContext().IterateChanged(txnFrom, txnTo, p.tx)
-	defer it.Close()
-
-	for it.HasNext() {
-		k, v = it.Next(k[:0], v[:0])
+	if err = agg.Accounts().MakeContext().IterateRecentlyChanged(txnFrom, txnTo, p.tx, func(k []byte, v []byte) error {
 		newK, err := transformPlainStateKey(k)
 		if err != nil {
 			return err
@@ -404,6 +409,9 @@ func (p *HashPromoter) UnwindOnHistoryV3(logPrefix string, agg *state.Aggregator
 		}
 
 		load(newK, value)
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// delete Intermediate hashes of deleted accounts

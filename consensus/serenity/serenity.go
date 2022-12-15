@@ -65,6 +65,7 @@ func (s *Serenity) Type() params.ConsensusType {
 
 // Author implements consensus.Engine, returning the header's coinbase as the
 // proof-of-stake verified author of the block.
+// This is thread-safe (only access the header.Coinbase or the underlying engine's thread-safe method)
 func (s *Serenity) Author(header *types.Header) (common.Address, error) {
 	if !IsPoSHeader(header) {
 		return s.eth1Engine.Author(header)
@@ -203,7 +204,7 @@ func (s *Serenity) verifyHeader(chain consensus.ChainHeaderReader, header, paren
 	}
 
 	// Verify existence / non-existence of withdrawalsHash
-	shanghai := chain.Config().IsShanghai(header.Number.Uint64())
+	shanghai := chain.Config().IsShanghai(header.Time)
 	if shanghai && header.WithdrawalsHash == nil {
 		return fmt.Errorf("missing withdrawalsHash")
 	}
