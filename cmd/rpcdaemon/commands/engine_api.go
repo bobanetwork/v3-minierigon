@@ -298,6 +298,7 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 		return err
 	}
 	log.Debug("MMGP engine_api ProofResult", "blockNum", BN-1, "blockHash", BH, "stateroot", hash, "acc", acc2, "proof", aProof)
+	log.Debug("MMDBG proof db", "db", e._proofDB)
 	gProofHack.lock.Lock()
 	if gProofHack.Proofs == nil {
 		gProofHack.Proofs = make(map[uint64] []hexutil.Bytes)

@@ -307,6 +307,8 @@ func OpenDatabase(config *nodecfg.Config, logger log.Logger, label kv.Label) (kv
 		name = "chaindata"
 	case kv.TxPoolDB:
 		name = "txpool"
+	case kv.AcctProofDB:
+		name = "proofdb"
 	default:
 		name = "test"
 	}
@@ -336,6 +338,15 @@ func OpenDatabase(config *nodecfg.Config, logger log.Logger, label kv.Label) (kv
 			opts = opts.PageSize(config.MdbxPageSize.Bytes()).MapSize(8 * datasize.TB)
 		} else {
 			opts = opts.GrowthStep(16 * datasize.MB)
+		}
+		if label == kv.AcctProofDB {
+			proofCfg :=  func(defaultBuckets kv.TableCfg) kv.TableCfg {
+				return kv.TableCfg {
+					"AccountProof": {},
+					"DbInfo": {},
+				}
+			}
+			opts = opts.WithTableCfg(proofCfg)
 		}
 		return opts.Open()
 	}

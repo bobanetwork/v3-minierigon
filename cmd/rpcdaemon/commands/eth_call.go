@@ -316,6 +316,7 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 		return nil, err
 	}
 	log.Debug("MMGP GetProof", "addr", address, "stor", storageKeys, "_blockNr", _blockNr, "mapped_BN",blockNr)
+	log.Debug("MMGP proofDB", "db", api._proofDB)
 
 	var acc2 accounts.Account
 	var aProof []hexutil.Bytes

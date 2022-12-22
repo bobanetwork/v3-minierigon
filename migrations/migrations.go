@@ -38,6 +38,7 @@ var migrations = map[kv.Label][]Migration{
 	},
 	kv.TxPoolDB: {},
 	kv.SentryDB: {},
+	kv.AcctProofDB: {},
 }
 
 type Callback func(tx kv.RwTx, progress []byte, isDone bool) error
