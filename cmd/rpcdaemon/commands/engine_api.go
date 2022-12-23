@@ -5,8 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/big"
-	"sync"
-	"reflect"
 
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
@@ -24,13 +22,6 @@ import (
 	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/rlp"
 )
-
-var gProofHack struct {
-	lock		sync.RWMutex
-	Proofs		map[uint64] []hexutil.Bytes
-	Accounts	map[uint64] accounts.Account
-	Stateroots	map[uint64] common.Hash
-}
 
 // ExecutionPayloadV1 represents an execution payload (aka block) without withdrawals
 type ExecutionPayloadV1 struct {
@@ -306,18 +297,6 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 	log.Debug("MMGP engine_api ProofResult", "blockNum", BN-1, "blockHash", BH, "stateroot", hash, "acc", acc2, "proof", aProof)
 	log.Debug("MMDBG proof db", "db", e._proofDB)
 	proofDB := e._proofDB
-
-	gProofHack.lock.Lock()
-	if gProofHack.Proofs == nil {
-		gProofHack.Proofs = make(map[uint64] []hexutil.Bytes)
-		gProofHack.Accounts = make(map[uint64] accounts.Account)
-		gProofHack.Stateroots = make(map[uint64] common.Hash)
-	}
-	gProofHack.Proofs[BN-1] = aProof
-	gProofHack.Accounts[BN-1] = acc2
-	gProofHack.Stateroots[BN-1] = hash
-	gProofHack.lock.Unlock()
-	log.Debug("MMGP engine_api Unlocked mutex")
 
 	blockKey := []byte(string(BN-1))
 

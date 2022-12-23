@@ -396,45 +396,10 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 			log.Debug("MMGP proofDB error", "err", err)
 			return nil, err
 		}
-
-		/*
-		// Check for a cached result
-		log.Debug("MMGP GetProof checking memory cache for", "BN", blockNr)
-		gProofHack.lock.RLock()
-		if p,found := gProofHack.Proofs[blockNr]; found {
-			aProof = p
-			acc2 = gProofHack.Accounts[blockNr]
-			trRoot = gProofHack.Stateroots[blockNr]
-		}
-		gProofHack.lock.RUnlock()
-		log.Debug("MMGP GetProof found cached result for", "block", blockNr)
-		*/
-
 	} else {
 		// Not a supported request.
 		return nil, fmt.Errorf(NotImplemented, "eth_getProof")	
 	}
-
-/*
-	if len(sp) == 0 {
-	  sp = make([]trie.StorageResult,1)
-	  sp[0].Key = "0x0000000000000000000000000000000000000000000000000000000000000000"
-	  sp[0].Value = new(hexutil.Big)
-	  sp[0].Proof = make([]string,0)
-	}
-*/
-	/*
-	accRes := &AccountResult{
-		Balance:      (*hexutil.Big)(acc2.Balance.ToBig()),
-		CodeHash:     acc2.CodeHash,
-		Nonce:        hexutil.Uint64(acc2.Nonce),
-		Address:      address,
-		AccountProof: aProof,
-		StorageHash:  acc2.Root, //storageHash,
-		Root:         trRoot,
-		StorageProof: sp,
-	}
-	*/
 	log.Debug("MMGP GetProof returning", "accRes", accRes)
 
 	return &accRes, nil
