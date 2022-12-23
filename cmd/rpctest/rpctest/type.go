@@ -231,7 +231,7 @@ type EthReceipt struct {
 
 type EthGetProof struct {
 	CommonResponse
-	Result AccountResult `json:"result"`
+	Result AccountResult2 `json:"result"`
 }
 
 type EthGetLogs struct {
@@ -245,7 +245,7 @@ type EthGetTransactionCount struct {
 }
 
 // AccountResult is the result struct for GetProof
-type AccountResult struct {
+type AccountResult2 struct {
 	Address      common.Address  `json:"address"`
 	AccountProof []string        `json:"accountProof"`
 	Balance      *hexutil.Big    `json:"balance"`

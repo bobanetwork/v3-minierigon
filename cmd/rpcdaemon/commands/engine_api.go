@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"reflect"
 
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
@@ -21,6 +22,7 @@ import (
 	"github.com/ledgerwatch/log/v3"
 	"github.com/ledgerwatch/erigon/turbo/trie"
 	"github.com/ledgerwatch/erigon/core/types/accounts"
+	"github.com/ledgerwatch/erigon/rlp"
 )
 
 var gProofHack struct {
@@ -270,6 +272,10 @@ func (e *EngineImpl) ForkchoiceUpdatedV2(ctx context.Context, forkChoiceState *F
 }
 
 func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) error {
+	if BN == 0 {
+		return nil
+	}
+
 	tx, err := e.db.BeginRo(ctx)
 	if err != nil {
 		return err
@@ -299,6 +305,8 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 	}
 	log.Debug("MMGP engine_api ProofResult", "blockNum", BN-1, "blockHash", BH, "stateroot", hash, "acc", acc2, "proof", aProof)
 	log.Debug("MMDBG proof db", "db", e._proofDB)
+	proofDB := e._proofDB
+
 	gProofHack.lock.Lock()
 	if gProofHack.Proofs == nil {
 		gProofHack.Proofs = make(map[uint64] []hexutil.Bytes)
@@ -310,6 +318,30 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 	gProofHack.Stateroots[BN-1] = hash
 	gProofHack.lock.Unlock()
 	log.Debug("MMGP engine_api Unlocked mutex")
+
+	blockKey := []byte(string(BN-1))
+
+	dbEntry := &trie.AccountResult{
+		Balance:      (*hexutil.Big)(acc2.Balance.ToBig()),
+		CodeHash:     acc2.CodeHash,
+		Nonce:        hexutil.Uint64(acc2.Nonce),
+		Address:      pAddr,
+		AccountProof: aProof,
+		StorageHash:  acc2.Root,
+		Root:         hash,
+		//StorageProof: [],
+	}
+
+	if err := proofDB.Update(context.Background(), func(tx kv.RwTx) (err error) {
+		dbVal, err := rlp.EncodeToBytes(dbEntry)
+		if err != nil {
+			return err
+		}
+		return tx.Put("AccountProof", blockKey, dbVal)
+	}); err != nil {
+		return err
+	}
+	log.Debug("MMGP engine_api wrote to proofDB", "BN", BN-1, "dbEntry", dbEntry)
 
 	return nil
 }

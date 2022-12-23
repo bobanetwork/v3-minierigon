@@ -33,7 +33,7 @@ type PrivateDebugAPI interface {
 	GetModifiedAccountsByNumber(ctx context.Context, startNum rpc.BlockNumber, endNum *rpc.BlockNumber) ([]common.Address, error)
 	GetModifiedAccountsByHash(_ context.Context, startHash common.Hash, endHash *common.Hash) ([]common.Address, error)
 	TraceCall(ctx context.Context, args ethapi.CallArgs, blockNrOrHash rpc.BlockNumberOrHash, config *tracers.TraceConfig, stream *jsoniter.Stream) error
-	AccountAt(ctx context.Context, blockHash common.Hash, txIndex uint64, account common.Address) (*AccountResult, error)
+	AccountAt(ctx context.Context, blockHash common.Hash, txIndex uint64, account common.Address) (*trie.AccountResult, error)
 }
 
 // PrivateDebugAPIImpl is implementation of the PrivateDebugAPI interface based on remote Db access
@@ -217,7 +217,7 @@ func (api *PrivateDebugAPIImpl) GetModifiedAccountsByHash(ctx context.Context, s
 	return changeset.GetModifiedAccounts(tx, startNum, endNum)
 }
 
-func (api *PrivateDebugAPIImpl) AccountAt(ctx context.Context, blockHash common.Hash, txIndex uint64, address common.Address) (*AccountResult, error) {
+func (api *PrivateDebugAPIImpl) AccountAt(ctx context.Context, blockHash common.Hash, txIndex uint64, address common.Address) (*trie.AccountResult, error) {
 	tx, err := api.db.BeginRo(ctx)
 	if err != nil {
 		return nil, err
@@ -241,7 +241,7 @@ func (api *PrivateDebugAPIImpl) AccountAt(ctx context.Context, blockHash common.
 	if err != nil {
 		return nil, err
 	}
-	result := &AccountResult{}
+	result := &trie.AccountResult{}
 	result.Balance.ToInt().Set(ibs.GetBalance(address).ToBig())
 	result.Nonce = hexutil.Uint64(ibs.GetNonce(address))
 	result.Code = ibs.GetCode(address)
@@ -249,7 +249,7 @@ func (api *PrivateDebugAPIImpl) AccountAt(ctx context.Context, blockHash common.
 	return result, nil
 }
 
-type AccountResult struct {
+type AcxcountResult struct {
 	Code         hexutil.Bytes   `json:"code"` // seemingly not needed on client, but for method above
 	AccountProof []hexutil.Bytes `json:"accountProof"`
 

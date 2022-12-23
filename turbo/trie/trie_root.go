@@ -220,6 +220,18 @@ type StorageResult struct {
 	Value *hexutil.Big `json:"value"`
 	Proof []string     `json:"proof"`
 }
+type AccountResult struct {
+	Code         hexutil.Bytes   `json:"code"` // seemingly not needed on client, but for method above
+	AccountProof []hexutil.Bytes `json:"accountProof"`
+
+	Address     common.Address `json:"address"`
+	Balance     *hexutil.Big   `json:"balance"`
+	CodeHash    common.Hash    `json:"codeHash"`
+	Nonce       hexutil.Uint64 `json:"nonce"`
+	StorageHash common.Hash    `json:"storageHash"`
+	Root        common.Hash    `json:"root"` // possibly not needed
+	StorageProof []StorageResult `json:"storageProof"`
+}
 
 func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash common.Hash, acc accounts.Account, sp *[]StorageResult) (error) {
 	var T *Trie = New(EmptyRoot)

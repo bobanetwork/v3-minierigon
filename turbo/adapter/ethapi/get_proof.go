@@ -3,13 +3,13 @@ package ethapi
 import (
 	"bytes"
 	"github.com/ledgerwatch/erigon/common"
-	"github.com/ledgerwatch/erigon/common/hexutil"
+	//"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/turbo/trie"
 )
-
+/*
 // Result structs for GetProof
-type AccountResult struct {
+type xAccountResult struct {
 	Address      common.Address  `json:"address"`
 	AccountProof []string        `json:"accountProof"`
 	Balance      *hexutil.Big    `json:"balance"`
@@ -24,7 +24,7 @@ type xStorageResult struct {
 	Value *hexutil.Big `json:"value"`
 	Proof []string     `json:"proof"`
 }
-
+*/
 /*TODO: to support proofs
 func (s *PublicBlockChainAPI) GetProof(ctx context.Context, address common.Address, storageKeys []string, blockNr rpc.BlockNumber) (*AccountResult, error) {
 	block := uint64(blockNr.Int64()) + 1

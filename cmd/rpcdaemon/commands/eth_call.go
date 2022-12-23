@@ -34,6 +34,7 @@ import (
 	"math/big"
 	//"math/bits"
 	//"github.com/ledgerwatch/erigon/cmd/rpctest/rpctest"
+	"github.com/ledgerwatch/erigon/rlp"
 )
 
 var latestNumOrHash = rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
@@ -303,7 +304,8 @@ func (api *APIImpl) EstimateGas(ctx context.Context, argsOrNil *ethapi2.CallArgs
 	return hexutil.Uint64(hi), nil
 }
 
-func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storageKeys []string, _blockNr rpc.BlockNumberOrHash) (*AccountResult, error) {
+
+func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storageKeys []string, _blockNr rpc.BlockNumberOrHash) (*trie.AccountResult, error) {
 
 	tx, err := api.db.BeginRo(ctx)
 	if err != nil {
@@ -317,6 +319,8 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 	}
 	log.Debug("MMGP GetProof", "addr", address, "stor", storageKeys, "_blockNr", _blockNr, "mapped_BN",blockNr)
 	log.Debug("MMGP proofDB", "db", api._proofDB)
+	var proofDB kv.RoDB
+	proofDB = api._proofDB
 
 	var acc2 accounts.Account
 	var aProof []hexutil.Bytes
@@ -326,7 +330,8 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 	sp = make([]trie.StorageResult, len(storageKeys))
 
 	headBlock,err := rpchelper.GetLatestBlockNumber(tx)
-	
+	var accRes trie.AccountResult
+
 	if blockNr == headBlock {
 		log.Debug("MMGP Will calculate GetProof for latest block number", "BN", blockNr, "head", headBlock)
 
@@ -355,7 +360,6 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 		}
 		log.Debug("MMGP GetProof CalcTrieRoot", "err", err, "trRoot", trRoot, "proof", aProof)
 
-		
 		if len(storageKeys) > 0 {
 			for idx,_ := range(storageKeys) {
 				sp[idx].Key = storageKeys[idx]
@@ -364,11 +368,38 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 			err = loader.CalcStorageProof(tx, addrHash, acc2, &sp)
 			log.Debug("MMGP StorageResult", "newSP", sp, "err", err)
 		}
+
+		accRes.Balance = (*hexutil.Big)(acc2.Balance.ToBig())
+		accRes.CodeHash = acc2.CodeHash
+		accRes.Nonce = hexutil.Uint64(acc2.Nonce)
+		accRes.AccountProof = aProof
+		accRes.StorageHash = acc2.Root
+		accRes.Root = trRoot
+		accRes.StorageProof = sp
 	} else if blockNr > 0 && address == common.HexToAddress("0x4200000000000000000000000000000000000016") && len(storageKeys) == 0 {
 		// Will check for a cached account proof. Storage proofs aren't currently supported for cached results.
 		//block := uint64(blockNr)
+
+		log.Debug("MMGP GetProof checking proofDB for", "BN", blockNr)
+		blockKey := []byte(string(blockNr))	
+
+		if err = proofDB.View(context.Background(), func(tx kv.Tx) error {
+			val, err := tx.GetOne("AccountProof", blockKey)
+			log.Debug("MMGP proofDB check", "err", err, "key", blockKey, "val", hexutil.Bytes(val))
+
+			if err == nil {
+				err := rlp.DecodeBytes(val, &accRes)
+				log.Debug("MMGP proofDB decode", "err", err, "accRes", accRes)
+			}
+			return err
+		}); err != nil {
+			log.Debug("MMGP proofDB error", "err", err)
+			return nil, err
+		}
+
+		/*
 		// Check for a cached result
-		log.Debug("MMGP GetProof checking cache for", "BN", blockNr)
+		log.Debug("MMGP GetProof checking memory cache for", "BN", blockNr)
 		gProofHack.lock.RLock()
 		if p,found := gProofHack.Proofs[blockNr]; found {
 			aProof = p
@@ -377,6 +408,8 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 		}
 		gProofHack.lock.RUnlock()
 		log.Debug("MMGP GetProof found cached result for", "block", blockNr)
+		*/
+
 	} else {
 		// Not a supported request.
 		return nil, fmt.Errorf(NotImplemented, "eth_getProof")	
@@ -390,6 +423,7 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 	  sp[0].Proof = make([]string,0)
 	}
 */
+	/*
 	accRes := &AccountResult{
 		Balance:      (*hexutil.Big)(acc2.Balance.ToBig()),
 		CodeHash:     acc2.CodeHash,
@@ -400,9 +434,10 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 		Root:         trRoot,
 		StorageProof: sp,
 	}
+	*/
 	log.Debug("MMGP GetProof returning", "accRes", accRes)
 
-	return accRes, nil
+	return &accRes, nil
 }
 
 func (api *APIImpl) tryBlockFromLru(hash common.Hash) *types.Block {
