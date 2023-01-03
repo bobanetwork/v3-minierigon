@@ -381,7 +381,7 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 		//block := uint64(blockNr)
 
 		log.Debug("MMGP GetProof checking proofDB for", "BN", blockNr)
-		blockKey := []byte(string(blockNr))	
+		blockKey := []byte(fmt.Sprint(blockNr))	
 
 		if err = proofDB.View(context.Background(), func(tx kv.Tx) error {
 			val, err := tx.GetOne("AccountProof", blockKey)

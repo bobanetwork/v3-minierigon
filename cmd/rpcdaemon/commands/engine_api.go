@@ -298,7 +298,7 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 	log.Debug("MMDBG proof db", "db", e._proofDB)
 	proofDB := e._proofDB
 
-	blockKey := []byte(string(BN-1))
+	blockKey := []byte(fmt.Sprint(BN-1))
 
 	dbEntry := &trie.AccountResult{
 		Balance:      (*hexutil.Big)(acc2.Balance.ToBig()),
