@@ -8,13 +8,11 @@ import (
 	"time"
 
 	mapset "github.com/deckarep/golang-set"
-	"github.com/holiman/uint256"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/memdb"
-	"github.com/ledgerwatch/erigon-lib/txpool"
 	"github.com/ledgerwatch/log/v3"
 
+	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/txpool"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/common/debug"
 	"github.com/ledgerwatch/erigon/consensus"
@@ -22,7 +20,6 @@ import (
 	"github.com/ledgerwatch/erigon/core/rawdb"
 	"github.com/ledgerwatch/erigon/core/state"
 	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/eth/ethutils"
 	"github.com/ledgerwatch/erigon/params"
 )
@@ -32,11 +29,8 @@ type MiningBlock struct {
 	Uncles      []*types.Header
 	Txs         types.Transactions
 	Receipts    types.Receipts
-	PreparedTxs types.TransactionsStream
 	Withdrawals []*types.Withdrawal
-
-	LocalTxs  types.TransactionsStream
-	RemoteTxs types.TransactionsStream
+	PreparedTxs types.TransactionsStream
 
         Deposits [][]byte
 	NoTxPool bool
@@ -113,7 +107,6 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 	if err != nil {
 		return fmt.Errorf("getting last executed block: %w", err)
 	}
-
 	parent := rawdb.ReadHeaderByNumber(tx, executionAt)
 	if parent == nil { // todo: how to return error and don't stop Erigon?
 		return fmt.Errorf("empty block %d", executionAt)
@@ -132,6 +125,7 @@ func SpawnMiningCreateBlockStage(s *StageState, tx kv.RwTx, cfg MiningCreateBloc
 	}
 
 	blockNum := executionAt + 1
+
 	localUncles, remoteUncles, err := readNonCanonicalHeaders(tx, blockNum, cfg.engine, coinbase, txPoolLocals)
 	if err != nil {
 		return err
@@ -324,6 +318,7 @@ func readNonCanonicalHeaders(tx kv.Tx, blockNum uint64, engine consensus.Engine,
 	}
 	return
 }
+<<<<<<< HEAD
 
 func filterBadTransactions(transactions []types.Transaction, config params.ChainConfig, blockNumber uint64, baseFee *big.Int, simulationTx *memdb.MemoryMutation) ([]types.Transaction, error) {
 	log.Debug("MMDBG entering filterBadTransactions", "num", len(transactions))
@@ -453,3 +448,5 @@ func filterBadTransactions(transactions []types.Transaction, config params.Chain
 	log.Debug("Filtration", "initial", initialCnt, "no sender", noSenderCnt, "no account", noAccountCnt, "nonce too low", nonceTooLowCnt, "nonceTooHigh", missedTxs, "sender not EOA", notEOACnt, "fee too low", feeTooLowCnt, "overflow", overflowCnt, "balance too low", balanceTooLowCnt, "filtered", len(filtered))
 	return filtered, nil
 }
+=======
+>>>>>>> upstream/devel
