@@ -27,12 +27,13 @@ import (
 	"time"
 
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/chain"
+	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/common/math"
 	"github.com/ledgerwatch/erigon/crypto"
-	"github.com/ledgerwatch/erigon/params"
 	"github.com/ledgerwatch/erigon/rlp"
 )
 
@@ -69,13 +70,12 @@ type Transaction interface {
 	GetGas() uint64
 	GetValue() *uint256.Int
 	Time() time.Time
-	GetTo() *common.Address
-	AsMessage(s Signer, baseFee *big.Int, rules *params.Rules) (Message, error)
+	GetTo() *libcommon.Address
+	AsMessage(s Signer, baseFee *big.Int, rules *chain.Rules) (Message, error)
 	WithSignature(signer Signer, sig []byte) (Transaction, error)
-	FakeSign(address common.Address) (Transaction, error)
-	Hash() common.Hash
-	SigningHash(chainID *big.Int) common.Hash
-	Size() common.StorageSize
+	FakeSign(address libcommon.Address) (Transaction, error)
+	Hash() libcommon.Hash
+	SigningHash(chainID *big.Int) libcommon.Hash
 	GetData() []byte
 	GetAccessList() AccessList
 	Protected() bool
@@ -88,9 +88,9 @@ type Transaction interface {
 	// Sender may cache the address, allowing it to be used regardless of
 	// signing method. The cache is invalidated if the cached signer does
 	// not match the signer used in the current call.
-	Sender(Signer) (common.Address, error)
-	GetSender() (common.Address, bool)
-	SetSender(common.Address)
+	Sender(Signer) (libcommon.Address, error)
+	GetSender() (libcommon.Address, bool)
+	SetSender(libcommon.Address)
 	IsContractDeploy() bool
 	IsStarkNet() bool
 }
@@ -102,7 +102,6 @@ type TransactionMisc struct {
 
 	// caches
 	hash atomic.Value //nolint:structcheck
-	size atomic.Value //nolint:structcheck
 	from atomic.Value
 }
 
@@ -287,7 +286,7 @@ type TransactionsGroupedBySender []Transactions
 func TxDifference(a, b Transactions) Transactions {
 	keep := make(Transactions, 0, len(a))
 
-	remove := make(map[common.Hash]struct{})
+	remove := make(map[libcommon.Hash]struct{})
 	for _, tx := range b {
 		remove[tx.Hash()] = struct{}{}
 	}
@@ -350,7 +349,7 @@ type TransactionsStream interface {
 // transactions in a profit-maximizing sorted order, while supporting removing
 // entire batches of transactions for non-executable accounts.
 type TransactionsByPriceAndNonce struct {
-	idx    map[common.Address]int      // Per account nonce-sorted list of transactions
+	idx    map[libcommon.Address]int   // Per account nonce-sorted list of transactions
 	txs    TransactionsGroupedBySender // Per account nonce-sorted list of transactions
 	heads  TxByPriceAndTime            // Next transaction for each unique account (price heap)
 	signer Signer                      // Signer for the set of transactions
@@ -364,7 +363,7 @@ type TransactionsByPriceAndNonce struct {
 func NewTransactionsByPriceAndNonce(signer Signer, txs TransactionsGroupedBySender) *TransactionsByPriceAndNonce {
 	// Initialize a price and received time based heap with the head transactions
 	heads := make(TxByPriceAndTime, 0, len(txs))
-	idx := make(map[common.Address]int, len(txs))
+	idx := make(map[libcommon.Address]int, len(txs))
 	for i, accTxs := range txs {
 		from, _ := accTxs[0].Sender(signer)
 
@@ -474,9 +473,9 @@ func (t *TransactionsFixedOrder) Pop() {
 
 // Message is a fully derived transaction and implements core.Message
 type Message struct {
-	sourceHash *common.Hash
-	to         *common.Address
-	from       common.Address
+	sourceHash *libcommon.Hash
+	to         *libcommon.Address
+	from       libcommon.Address
 	nonce      uint64
 	mint       uint256.Int
 	amount     uint256.Int
@@ -491,7 +490,7 @@ type Message struct {
 	isSystemTx bool
 }
 
-func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *uint256.Int, gasLimit uint64, gasPrice *uint256.Int, feeCap, tip *uint256.Int, data []byte, accessList AccessList, checkNonce bool, isFree bool) Message {
+func NewMessage(from libcommon.Address, to *libcommon.Address, nonce uint64, amount *uint256.Int, gasLimit uint64, gasPrice *uint256.Int, feeCap, tip *uint256.Int, data []byte, accessList AccessList, checkNonce bool, isFree bool) Message {
 	m := Message{
 		from:       from,
 		to:         to,
@@ -515,18 +514,17 @@ func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *u
 	return m
 }
 
-func (m Message) From() common.Address   { return m.from }
-func (m Message) To() *common.Address    { return m.to }
-func (m Message) GasPrice() *uint256.Int { return &m.gasPrice }
-func (m Message) FeeCap() *uint256.Int   { return &m.feeCap }
-func (m Message) Tip() *uint256.Int      { return &m.tip }
-func (m Message) Value() *uint256.Int    { return &m.amount }
-func (m Message) Mint() *uint256.Int     { return &m.mint }
-func (m Message) Gas() uint64            { return m.gasLimit }
-func (m Message) Nonce() uint64          { return m.nonce }
-func (m Message) Data() []byte           { return m.data }
-func (m Message) AccessList() AccessList { return m.accessList }
-func (m Message) CheckNonce() bool       { return m.checkNonce }
+func (m Message) From() libcommon.Address { return m.from }
+func (m Message) To() *libcommon.Address  { return m.to }
+func (m Message) GasPrice() *uint256.Int  { return &m.gasPrice }
+func (m Message) FeeCap() *uint256.Int    { return &m.feeCap }
+func (m Message) Tip() *uint256.Int       { return &m.tip }
+func (m Message) Value() *uint256.Int     { return &m.amount }
+func (m Message) Gas() uint64             { return m.gasLimit }
+func (m Message) Nonce() uint64           { return m.nonce }
+func (m Message) Data() []byte            { return m.data }
+func (m Message) AccessList() AccessList  { return m.accessList }
+func (m Message) CheckNonce() bool        { return m.checkNonce }
 func (m *Message) SetCheckNonce(checkNonce bool) {
 	m.checkNonce = checkNonce
 }

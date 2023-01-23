@@ -2,21 +2,24 @@ package ethapi
 
 import (
 	"bytes"
-	"github.com/ledgerwatch/erigon/common"
-	//"github.com/ledgerwatch/erigon/common/hexutil"
+
+	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/length"
+
+	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/turbo/trie"
 )
 /*
 // Result structs for GetProof
 type xAccountResult struct {
-	Address      common.Address  `json:"address"`
-	AccountProof []string        `json:"accountProof"`
-	Balance      *hexutil.Big    `json:"balance"`
-	CodeHash     common.Hash     `json:"codeHash"`
-	Nonce        hexutil.Uint64  `json:"nonce"`
-	StorageHash  common.Hash     `json:"storageHash"`
-	StorageProof []trie.StorageResult `json:"storageProof"`
+	Address      libcommon.Address `json:"address"`
+	AccountProof []string          `json:"accountProof"`
+	Balance      *hexutil.Big      `json:"balance"`
+	CodeHash     libcommon.Hash    `json:"codeHash"`
+	Nonce        hexutil.Uint64    `json:"nonce"`
+	StorageHash  libcommon.Hash    `json:"storageHash"`
+	StorageProof []StorageResult   `json:"storageProof"`
 }
 
 type xStorageResult struct {
@@ -26,7 +29,7 @@ type xStorageResult struct {
 }
 */
 /*TODO: to support proofs
-func (s *PublicBlockChainAPI) GetProof(ctx context.Context, address common.Address, storageKeys []string, blockNr rpc.BlockNumber) (*AccountResult, error) {
+func (s *PublicBlockChainAPI) GetProof(ctx context.Context, address libcommon.Address, storageKeys []string, blockNr rpc.BlockNumber) (*AccountResult, error) {
 	block := uint64(blockNr.Int64()) + 1
 	db := s.b.ChainDb()
 	ts := common2.EncodeTs(block)
@@ -91,8 +94,8 @@ func (s *PublicBlockChainAPI) GetProof(ctx context.Context, address common.Addre
 		unfurlList[i] = ks
 		i++
 		var sk [64]byte
-		copy(sk[:], []byte(ks)[:common.HashLength])
-		copy(sk[common.HashLength:], []byte(ks)[common.HashLength+common.IncarnationLength:])
+		copy(sk[:], []byte(ks)[:libcommon.HashLength])
+		copy(sk[libcommon.HashLength:], []byte(ks)[libcommon.HashLength+common.IncarnationLength:])
 		unfurl.AddKey(sk[:])
 	}
 	rl := trie.NewRetainList(0)
@@ -103,7 +106,7 @@ func (s *PublicBlockChainAPI) GetProof(ctx context.Context, address common.Addre
 	rl.AddKey(addrHash[:])
 	unfurl.AddKey(addrHash[:])
 	for _, key := range storageKeys {
-		keyAsHash := common.HexToHash(key)
+		keyAsHash := libcommon.HexToHash(key)
 		if keyHash, err1 := common.HashData(keyAsHash[:]); err1 == nil {
 			trieKey := append(addrHash[:], keyHash[:]...)
 			rl.AddKey(trieKey)
@@ -139,7 +142,7 @@ func (s *PublicBlockChainAPI) GetProof(ctx context.Context, address common.Addre
 	}
 	storageProof := make([]StorageResult, len(storageKeys))
 	for i, key := range storageKeys {
-		keyAsHash := common.HexToHash(key)
+		keyAsHash := libcommon.HexToHash(key)
 		if keyHash, err1 := common.HashData(keyAsHash[:]); err1 == nil {
 			trieKey := append(addrHash[:], keyHash[:]...)
 			if proof, err3 := tr.Prove(trieKey, 64 , true); err3 == nil {
@@ -179,7 +182,7 @@ type Receiver struct {
 	currentIdx      int
 }
 
-func (r *Receiver) Root() common.Hash { panic("don't call me") }
+func (r *Receiver) Root() libcommon.Hash { panic("don't call me") }
 func (r *Receiver) Receive(
 	itemType trie.StreamItem,
 	accountKey []byte,
@@ -205,7 +208,7 @@ func (r *Receiver) Receive(
 		if c > 0 {
 			return r.defaultReceiver.Receive(itemType, accountKey, storageKey, accountValue, storageValue, hash, hasTree, cutoff)
 		}
-		if len(k) > common.HashLength {
+		if len(k) > length.Hash {
 			v := r.storageMap[ks]
 			if c <= 0 && len(v) > 0 {
 				if err := r.defaultReceiver.Receive(trie.StorageStreamItem, nil, k, nil, v, nil, hasTree, 0); err != nil {

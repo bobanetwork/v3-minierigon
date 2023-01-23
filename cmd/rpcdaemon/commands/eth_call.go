@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/holiman/uint256"
-	//"github.com/ledgerwatch/erigon-lib/common/length"
+	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -79,6 +79,10 @@ func (api *APIImpl) Call(ctx context.Context, args ethapi2.CallArgs, blockNrOrHa
 		return nil, err
 	}
 
+	if len(result.ReturnData) > api.ReturnDataLimit {
+		return nil, fmt.Errorf("call retuned result on length %d exceeding limit %d", len(result.ReturnData), api.ReturnDataLimit)
+	}
+
 	// If the result contains a revert reason, try to unpack and return it.
 	if len(result.Revert()) > 0 {
 		return nil, ethapi2.NewRevertError(result)
@@ -132,7 +136,7 @@ func (api *APIImpl) EstimateGas(ctx context.Context, argsOrNil *ethapi2.CallArgs
 	)
 	// Use zero address if sender unspecified.
 	if args.From == nil {
-		args.From = new(common.Address)
+		args.From = new(libcommon.Address)
 	}
 
 	bNrOrHash := rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)
@@ -304,8 +308,7 @@ func (api *APIImpl) EstimateGas(ctx context.Context, argsOrNil *ethapi2.CallArgs
 	return hexutil.Uint64(hi), nil
 }
 
-
-func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storageKeys []string, _blockNr rpc.BlockNumberOrHash) (*trie.AccountResult, error) {
+func (api *APIImpl) GetProof(ctx context.Context, address libcommon.Address, storageKeys []string, _blockNr rpc.BlockNumberOrHash) (*trie.AccountResult, error) {
 
 	tx, err := api.db.BeginRo(ctx)
 	if err != nil {
@@ -324,7 +327,7 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 
 	var acc2 accounts.Account
 	var aProof []hexutil.Bytes
-	var trRoot common.Hash
+	var trRoot libcommon.Hash
 	var sp []trie.StorageResult
 
 	sp = make([]trie.StorageResult, len(storageKeys))
@@ -405,7 +408,7 @@ func (api *APIImpl) GetProof(ctx context.Context, address common.Address, storag
 	return &accRes, nil
 }
 
-func (api *APIImpl) tryBlockFromLru(hash common.Hash) *types.Block {
+func (api *APIImpl) tryBlockFromLru(hash libcommon.Hash) *types.Block {
 	var block *types.Block
 	if api.blocksLRU != nil {
 		if it, ok := api.blocksLRU.Get(hash); ok && it != nil {
@@ -475,7 +478,7 @@ func (api *APIImpl) CreateAccessList(ctx context.Context, args ethapi2.CallArgs,
 	// lists and we'll need to reestimate every time
 	nogas := args.Gas == nil
 
-	var to common.Address
+	var to libcommon.Address
 	if args.To != nil {
 		to = *args.To
 	} else {
@@ -497,7 +500,7 @@ func (api *APIImpl) CreateAccessList(ctx context.Context, args ethapi2.CallArgs,
 	}
 
 	if args.From == nil {
-		args.From = &common.Address{}
+		args.From = &libcommon.Address{}
 	}
 
 	// Retrieve the precompiles since they don't need to be added to the access list
@@ -565,7 +568,7 @@ func (api *APIImpl) CreateAccessList(ctx context.Context, args ethapi2.CallArgs,
 
 // to address is warm already, so we can save by adding it to the access list
 // only if we are adding a lot of its storage slots as well
-func optimizeToInAccessList(accessList *accessListResult, to common.Address) {
+func optimizeToInAccessList(accessList *accessListResult, to libcommon.Address) {
 	indexToRemove := -1
 
 	for i := 0; i < len(*accessList.Accesslist); i++ {
