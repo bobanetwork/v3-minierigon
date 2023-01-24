@@ -408,8 +408,9 @@ func TestGetProof(t *testing.T) {
 	ctx, conn := rpcdaemontest.CreateTestGrpcConn(t, stages.Mock(t))
 	mining := txpool.NewMiningClient(conn)
 	ff := rpchelper.New(ctx, nil, nil, mining, func() {})
-	api := NewEthAPI(NewBaseApi(ff, stateCache, snapshotsync.NewBlockReader(), nil, false, rpccfg.DefaultEvmCallTimeout, m.Engine), db, nil, nil, nil, 5000000)
-	var addr = common.HexToAddress("0x71562b71999873db5b286df957af199ec94617f7")
+
+	api := NewEthAPI(NewBaseApi(ff, stateCache, snapshotsync.NewBlockReader(), nil, false, rpccfg.DefaultEvmCallTimeout, m.Engine), db, nil, nil, nil, 5000000, 100_000)
+	var addr = libcommon.HexToAddress("0x71562b71999873db5b286df957af199ec94617f7")
 	ethCallBlockNumber := rpc.LatestBlockNumber
 
 	// TODO: include Storage

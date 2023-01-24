@@ -126,7 +126,7 @@ func (tm TransactionMisc) From() *atomic.Value {
 
 func DecodeTransaction(s *rlp.Stream) (Transaction, error) {
 	kind, size, err := s.Kind()
-        //log.Debug("MMDBG transaction.go DecodeTransaction", "kind", kind, "size", size, "err", err)
+	//log.Debug("MMDBG transaction.go DecodeTransaction", "kind", kind, "size", size, "err", err)
 	if err != nil {
 		return nil, err
 	}
@@ -520,6 +520,7 @@ func (m Message) GasPrice() *uint256.Int  { return &m.gasPrice }
 func (m Message) FeeCap() *uint256.Int    { return &m.feeCap }
 func (m Message) Tip() *uint256.Int       { return &m.tip }
 func (m Message) Value() *uint256.Int     { return &m.amount }
+func (m Message) Mint() *uint256.Int      { return &m.mint }
 func (m Message) Gas() uint64             { return m.gasLimit }
 func (m Message) Nonce() uint64           { return m.nonce }
 func (m Message) Data() []byte            { return m.data }
@@ -548,5 +549,4 @@ func (m *Message) ChangeGas(globalGasCap, desiredGas uint64) {
 
 	m.gasLimit = gas
 }
-func (m Message) IsSystemTx() bool       { return m.isSystemTx }
-
+func (m Message) IsSystemTx() bool { return m.isSystemTx }

@@ -12,13 +12,12 @@ import (
 	"golang.org/x/crypto/sha3"
 
 	"github.com/ledgerwatch/erigon/common"
+	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/crypto"
 	"github.com/ledgerwatch/erigon/rlp"
 	"github.com/ledgerwatch/erigon/turbo/rlphacks"
 	"github.com/ledgerwatch/log/v3"
-	"github.com/ledgerwatch/erigon/common/hexutil"
-	"golang.org/x/crypto/sha3"
 )
 
 const hashStackStride = length2.Hash + 1 // + 1 byte for RLP encoding
@@ -31,8 +30,8 @@ var EmptyCodeHash = crypto.Keccak256Hash(nil)
 type HashBuilder struct {
 	byteArrayWriter *ByteArrayWriter
 
-	hashStack []byte                // Stack of sub-slices, each 33 bytes each, containing RLP encodings of node hashes (or of nodes themselves, if shorter than 32 bytes)
-	nodeStack []node                // Stack of nodes
+	hashStack []byte // Stack of sub-slices, each 33 bytes each, containing RLP encodings of node hashes (or of nodes themselves, if shorter than 32 bytes)
+	nodeStack []node // Stack of nodes
 	//proofStack [][]byte             // eth_getProof nodes
 	acc       accounts.Account      // Working account instance (to avoid extra allocations)
 	sha       keccakState           // Keccak primitive that can absorb data (Write), and get squeezed to the hash out (Read)
@@ -45,8 +44,8 @@ type HashBuilder struct {
 	trace     bool // Set to true when HashBuilder is required to print trace information for diagnostics
 
 	topHashesCopy []byte
-	proofStack *[]hexutil.Bytes
-	proofAccount   *accounts.Account
+	proofStack    *[]hexutil.Bytes
+	proofAccount  *accounts.Account
 }
 
 // NewHashBuilder creates a new HashBuilder
@@ -155,7 +154,7 @@ func (hb *HashBuilder) completeLeafHash(kp, kl, compactLen int, key []byte, comp
 	var reader io.Reader
 
 	if hb.trace {
-		log.Debug("MMGP-6      HB completeLeafHash", "nodeLen", totalLen+pt, )
+		log.Debug("MMGP-6      HB completeLeafHash", "nodeLen", totalLen+pt)
 	}
 	if totalLen+pt < length2.Hash {
 		// Embedded node
@@ -168,7 +167,6 @@ func (hb *HashBuilder) completeLeafHash(kp, kl, compactLen int, key []byte, comp
 	}
 	var mmR bytes.Buffer
 	mmW := io.MultiWriter(writer, &mmR)
-
 
 	if _, err := mmW.Write(hb.lenPrefix[:pt]); err != nil {
 		return err
@@ -278,7 +276,7 @@ func (hb *HashBuilder) accountLeaf(length int, keyHex []byte, balance *uint256.I
 	s := &shortNode{Key: common.CopyBytes(key), Val: a}
 	// this invocation will take care of the popping given number of items from both hash stack and node stack,
 	// pushing resulting hash to the hash stack, and nil to the node stack
-	if err = hb.accountLeafHashWithKey(key, popped, true); err != nil {	// FIXME
+	if err = hb.accountLeafHashWithKey(key, popped, true); err != nil { // FIXME
 		return err
 	}
 	copy(s.ref.data[:], hb.hashStack[len(hb.hashStack)-length2.Hash:])
@@ -296,7 +294,7 @@ func (hb *HashBuilder) accountLeaf(length int, keyHex []byte, balance *uint256.I
 		hb.proofAccount.Nonce = a.Nonce
 		hb.proofAccount.Balance = a.Balance
 		if a.storage != nil {
-			hb.proofAccount.Root = common.BytesToHash(a.storage.reference())
+			hb.proofAccount.Root = libcommon.BytesToHash(a.storage.reference())
 		}
 		hb.proofAccount.CodeHash = a.CodeHash
 		hb.proofAccount.Incarnation = a.Incarnation
@@ -587,7 +585,7 @@ func (hb *HashBuilder) branchHash(set uint16, doProof bool) error {
 		if ((1 << digit) & set) != 0 {
 			if hashes[hashStackStride*i] == byte(0x80+length2.Hash) {
 				if hb.trace {
-					log.Debug("MMGP-5     HB writeHash", "hash", hexutil.Bytes(hashes[hashStackStride*i : hashStackStride*i+hashStackStride]))
+					log.Debug("MMGP-5     HB writeHash", "hash", hexutil.Bytes(hashes[hashStackStride*i:hashStackStride*i+hashStackStride]))
 				}
 				if _, err := mmW.Write(hashes[hashStackStride*i : hashStackStride*i+hashStackStride]); err != nil {
 					return err
@@ -597,7 +595,7 @@ func (hb *HashBuilder) branchHash(set uint16, doProof bool) error {
 				// Embedded node
 				size := int(hashes[hashStackStride*i]) - rlp.EmptyListCode
 				if hb.trace {
-					log.Debug("MMGP-5     HB writeEmbed", "node", hexutil.Bytes(hashes[hashStackStride*i : hashStackStride*i+size+1]))
+					log.Debug("MMGP-5     HB writeEmbed", "node", hexutil.Bytes(hashes[hashStackStride*i:hashStackStride*i+size+1]))
 				}
 				if _, err := mmW.Write(hashes[hashStackStride*i : hashStackStride*i+size+1]); err != nil {
 					return err
@@ -624,7 +622,7 @@ func (hb *HashBuilder) branchHash(set uint16, doProof bool) error {
 	if doProof && (hb.proofStack != nil) {
 		*hb.proofStack = append(*hb.proofStack, mmR.Bytes())
 		if hb.trace {
-			log.Debug("MMGP-5     HB readHash", "result", hexutil.Bytes(hb.hashStack[len(hb.hashStack)-common.HashLength:]))
+			//log.Debug("MMGP-5     HB readHash", "result", hexutil.Bytes(hb.hashStack[len(hb.hashStack)-common.HashLength:]))
 			log.Debug("MMGP-5     HB proofLine", "branchNode", hexutil.Bytes(mmR.Bytes()))
 			log.Debug("MMGP-5     HB proofStack 3", "len", len(*hb.proofStack), "stack", hb.proofStack)
 		}

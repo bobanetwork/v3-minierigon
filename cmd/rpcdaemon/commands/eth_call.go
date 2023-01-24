@@ -30,7 +30,7 @@ import (
 	"github.com/ledgerwatch/erigon/turbo/rpchelper"
 	"github.com/ledgerwatch/erigon/turbo/transactions"
 	"github.com/ledgerwatch/erigon/turbo/trie"
-//	"google.golang.org/grpc"
+	//	"google.golang.org/grpc"
 	"math/big"
 	//"math/bits"
 	//"github.com/ledgerwatch/erigon/cmd/rpctest/rpctest"
@@ -320,7 +320,7 @@ func (api *APIImpl) GetProof(ctx context.Context, address libcommon.Address, sto
 	if err != nil {
 		return nil, err
 	}
-	log.Debug("MMGP GetProof", "addr", address, "stor", storageKeys, "_blockNr", _blockNr, "mapped_BN",blockNr)
+	log.Debug("MMGP GetProof", "addr", address, "stor", storageKeys, "_blockNr", _blockNr, "mapped_BN", blockNr)
 	log.Debug("MMGP proofDB", "db", api._proofDB)
 	var proofDB kv.RoDB
 	proofDB = api._proofDB
@@ -332,7 +332,7 @@ func (api *APIImpl) GetProof(ctx context.Context, address libcommon.Address, sto
 
 	sp = make([]trie.StorageResult, len(storageKeys))
 
-	headBlock,err := rpchelper.GetLatestBlockNumber(tx)
+	headBlock, err := rpchelper.GetLatestBlockNumber(tx)
 	var accRes trie.AccountResult
 
 	if blockNr == headBlock {
@@ -364,10 +364,10 @@ func (api *APIImpl) GetProof(ctx context.Context, address libcommon.Address, sto
 		log.Debug("MMGP GetProof CalcTrieRoot", "err", err, "trRoot", trRoot, "proof", aProof)
 
 		if len(storageKeys) > 0 {
-			for idx,_ := range(storageKeys) {
+			for idx, _ := range storageKeys {
 				sp[idx].Key = storageKeys[idx]
 			}
-			
+
 			err = loader.CalcStorageProof(tx, addrHash, acc2, &sp)
 			log.Debug("MMGP StorageResult", "newSP", sp, "err", err)
 		}
@@ -379,12 +379,12 @@ func (api *APIImpl) GetProof(ctx context.Context, address libcommon.Address, sto
 		accRes.StorageHash = acc2.Root
 		accRes.Root = trRoot
 		accRes.StorageProof = sp
-	} else if blockNr > 0 && address == common.HexToAddress("0x4200000000000000000000000000000000000016") && len(storageKeys) == 0 {
+	} else if blockNr > 0 && address == libcommon.HexToAddress("0x4200000000000000000000000000000000000016") && len(storageKeys) == 0 {
 		// Will check for a cached account proof. Storage proofs aren't currently supported for cached results.
 		//block := uint64(blockNr)
 
 		log.Debug("MMGP GetProof checking proofDB for", "BN", blockNr)
-		blockKey := []byte(fmt.Sprint(blockNr))	
+		blockKey := []byte(fmt.Sprint(blockNr))
 
 		if err = proofDB.View(context.Background(), func(tx kv.Tx) error {
 			val, err := tx.GetOne("AccountProof", blockKey)
@@ -401,7 +401,7 @@ func (api *APIImpl) GetProof(ctx context.Context, address libcommon.Address, sto
 		}
 	} else {
 		// Not a supported request.
-		return nil, fmt.Errorf(NotImplemented, "eth_getProof")	
+		return nil, fmt.Errorf(NotImplemented, "eth_getProof")
 	}
 	log.Debug("MMGP GetProof returning", "accRes", accRes)
 

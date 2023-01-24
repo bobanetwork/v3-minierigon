@@ -20,13 +20,11 @@ import (
 	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/core/rawdb"
 	"github.com/ledgerwatch/erigon/core/types"
+	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/ethdb/privateapi"
 	"github.com/ledgerwatch/erigon/rlp"
 	"github.com/ledgerwatch/erigon/turbo/rpchelper"
-	"github.com/ledgerwatch/log/v3"
 	"github.com/ledgerwatch/erigon/turbo/trie"
-	"github.com/ledgerwatch/erigon/core/types/accounts"
-	"github.com/ledgerwatch/erigon/rlp"
 )
 
 // ExecutionPayloadV1 represents an execution payload (aka block) without withdrawals
@@ -180,24 +178,24 @@ func (e *EngineImpl) ForkchoiceUpdatedV1(ctx context.Context, forkChoiceState *F
 
 	var attributes *remote.EnginePayloadAttributes
 	if payloadAttributes != nil {
-        	//MMDBG
-                //log.Debug("MMDBG Preparing payloadAttributes", "tLen", len(payloadAttributes.Transactions))
-        	transactions := make([][]byte, len(payloadAttributes.Transactions))
+		//MMDBG
+		//log.Debug("MMDBG Preparing payloadAttributes", "tLen", len(payloadAttributes.Transactions))
+		transactions := make([][]byte, len(payloadAttributes.Transactions))
 		for i, transaction := range payloadAttributes.Transactions {
 			transactions[i] = ([]byte)(transaction)
-                        //log.Debug("MMDBG  -> ", "idx", i, "in", transaction, "out", transactions[i])
+			//log.Debug("MMDBG  -> ", "idx", i, "in", transaction, "out", transactions[i])
 		}
-       
+
 		//prepareParameters = &remote.EnginePayloadAttributes{
 		attributes = &remote.EnginePayloadAttributes{
 			Timestamp:             uint64(payloadAttributes.Timestamp),
 			PrevRandao:            gointerfaces.ConvertHashToH256(payloadAttributes.PrevRandao),
 			SuggestedFeeRecipient: gointerfaces.ConvertAddressToH160(payloadAttributes.SuggestedFeeRecipient),
-                        Transactions:          transactions,
+			Transactions:          transactions,
 			NoTxPool:              payloadAttributes.NoTxPool,
 		}
 	}
-        //log.Debug("MMDBG prepared", "prepareParameters", prepareParameters)
+	//log.Debug("MMDBG prepared", "prepareParameters", prepareParameters)
 
 	reply, err := e.api.EngineForkchoiceUpdatedV1(ctx, &remote.EngineForkChoiceUpdatedRequest{
 		ForkchoiceState: &remote.EngineForkChoiceState{
@@ -274,7 +272,7 @@ func (e *EngineImpl) ForkchoiceUpdatedV2(ctx context.Context, forkChoiceState *F
 	return json, nil
 }
 
-func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) error {
+func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH libcommon.Hash) error {
 	if BN == 0 {
 		return nil
 	}
@@ -284,7 +282,7 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 		return err
 	}
 
-	pAddr := common.HexToAddress("0x4200000000000000000000000000000000000016")
+	pAddr := libcommon.HexToAddress("0x4200000000000000000000000000000000000016")
 	pRL := trie.NewRetainList(0)
 	addrHash, err := common.HashData(pAddr[:])
 	if err != nil {
@@ -293,7 +291,7 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 
 	pRL.AddKey(addrHash[:])
 	loader := trie.NewFlatDBTrieLoader("mmProof")
-	if err := loader.Reset(pRL, nil, nil, /* trace */ false); err != nil {
+	if err := loader.Reset(pRL, nil, nil /* trace */, false); err != nil {
 		return err
 	}
 
@@ -310,7 +308,7 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 	log.Debug("MMDBG proof db", "db", e._proofDB)
 	proofDB := e._proofDB
 
-	blockKey := []byte(fmt.Sprint(BN-1))
+	blockKey := []byte(fmt.Sprint(BN - 1))
 
 	dbEntry := &trie.AccountResult{
 		Balance:      (*hexutil.Big)(acc2.Balance.ToBig()),
@@ -336,7 +334,6 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 
 	return nil
 }
-
 
 // NewPayloadV1 processes new payloads (blocks) from the beacon chain without withdrawals.
 // See https://github.com/ethereum/execution-apis/blob/main/src/engine/specification.md#engine_newpayloadv1
@@ -384,14 +381,13 @@ func (e *EngineImpl) NewPayloadV1(ctx context.Context, payload *ExecutionPayload
 		return nil, err
 	}
 
-	if (uint64(payload.BlockNumber)-1) % 20 == 0 {
+	if (uint64(payload.BlockNumber)-1)%20 == 0 {
 		pErr := e.MMProof(ctx, uint64(payload.BlockNumber), payload.BlockHash)
 		if pErr != nil {
 			log.Warn("MMDBG Proof pre-calculation failed", "Block", uint64(payload.BlockNumber), "err", pErr)
 		}
 	}
 	log.Debug("MMDBG <<< NewPayloadV1 Response", "BN", uint64(payload.BlockNumber), "res", res)
-
 
 	return convertPayloadStatus(ctx, e.db, res)
 }

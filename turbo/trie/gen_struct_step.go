@@ -22,9 +22,9 @@ import (
 	"github.com/holiman/uint256"
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 
+	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/turbo/rlphacks"
 	"github.com/ledgerwatch/log/v3"
-	"github.com/ledgerwatch/erigon/common/hexutil"
 	"reflect"
 )
 
@@ -178,7 +178,7 @@ func GenStructStep(
 					mmFlag = wantProof(curr[:len(curr)-1])
 				}
 				if trace {
-					log.Debug("MMGP-4    GSS AccountData",  "FieldSet", v.FieldSet, "curr", hexutil.Bytes(curr), "maxLen", maxLen, "cML", hexutil.Bytes(curr[:maxLen]), "retain", retain(curr[:maxLen]),"mmFlag",mmFlag)
+					log.Debug("MMGP-4    GSS AccountData", "FieldSet", v.FieldSet, "curr", hexutil.Bytes(curr), "maxLen", maxLen, "cML", hexutil.Bytes(curr[:maxLen]), "retain", retain(curr[:maxLen]), "mmFlag", mmFlag)
 				}
 
 				if retain(curr[:maxLen]) || mmFlag {
@@ -326,7 +326,7 @@ func GenStructStep(
 				if trace {
 					log.Debug("MMGP-4    calling e.branchHash")
 				}
-					if err := e.branchHash(groups[maxLen], false); err != nil {
+				if err := e.branchHash(groups[maxLen], false); err != nil {
 					return nil, nil, nil, err
 				}
 			}
@@ -367,131 +367,4 @@ func GenStructStep(
 		log.Debug("MMGP-4    GSS Exit")
 	}
 	return nil, nil, nil, nil
-}
-
-func GenStructStepOld(
-	retain func(prefix []byte) bool,
-	curr, succ []byte,
-	e structInfoReceiver,
-	h HashCollector,
-	data GenStructStepData,
-	groups []uint16,
-	trace bool,
-) ([]uint16, error) {
-	panic("GenStructStepOld")
-	for precLen, buildExtensions := calcPrecLen(groups), false; precLen >= 0; precLen, buildExtensions = calcPrecLen(groups), true {
-		var precExists = len(groups) > 0
-		// Calculate the prefix of the smallest prefix group containing curr
-		var precLen int
-		if len(groups) > 0 {
-			precLen = len(groups) - 1
-		}
-		succLen := prefixLen(succ, curr)
-		var maxLen int
-		if precLen > succLen {
-			maxLen = precLen
-		} else {
-			maxLen = succLen
-		}
-		if trace || maxLen >= len(curr) {
-			fmt.Printf("curr: %x, succ: %x, maxLen %d, groups: %b, precLen: %d, succLen: %d, buildExtensions: %t\n", curr, succ, maxLen, groups, precLen, succLen, buildExtensions)
-		}
-		// Add the digit immediately following the max common prefix and compute length of remainder length
-		extraDigit := curr[maxLen]
-		for maxLen >= len(groups) {
-			groups = append(groups, 0)
-		}
-		groups[maxLen] |= 1 << extraDigit
-		//fmt.Printf("groups is now %b\n", groups)
-		remainderStart := maxLen
-		if len(succ) > 0 || precExists {
-			remainderStart++
-		}
-		remainderLen := len(curr) - remainderStart
-
-		if !buildExtensions {
-			switch v := data.(type) {
-			case *GenStructStepHashData:
-				/* building a hash */
-				if err := e.hash(v.Hash[:]); err != nil {
-					return nil, err
-				}
-				buildExtensions = true
-			case *GenStructStepAccountData:
-				if retain(curr[:maxLen]) {
-					if err := e.accountLeaf(remainderLen, curr, &v.Balance, v.Nonce, v.Incarnation, v.FieldSet, codeSizeUncached); err != nil {
-						return nil, err
-					}
-				} else {
-					if err := e.accountLeafHash(remainderLen, curr, &v.Balance, v.Nonce, v.Incarnation, v.FieldSet); err != nil {
-						return nil, err
-					}
-				}
-			case *GenStructStepLeafData:
-				/* building leafs */
-				if retain(curr[:maxLen]) {
-					if err := e.leaf(remainderLen, curr, v.Value); err != nil {
-						return nil, err
-					}
-				} else {
-					if err := e.leafHash(remainderLen, curr, v.Value); err != nil {
-						return nil, err
-					}
-				}
-			default:
-				panic(fmt.Errorf("unknown data type: %T", data))
-			}
-		}
-
-		if buildExtensions {
-			if remainderLen > 0 {
-				if trace {
-					fmt.Printf("Extension %x\n", curr[remainderStart:remainderStart+remainderLen])
-				}
-				/* building extensions */
-				if retain(curr[:maxLen]) {
-					if err := e.extension(curr[remainderStart : remainderStart+remainderLen]); err != nil {
-						return nil, err
-					}
-				} else {
-					if err := e.extensionHash(curr[remainderStart : remainderStart+remainderLen]); err != nil {
-						return nil, err
-					}
-				}
-			}
-		}
-		// Check for the optional part
-		if precLen <= succLen && len(succ) > 0 {
-			return groups, nil
-		}
-		// Close the immediately encompassing prefix group, if needed
-		if len(succ) > 0 || precExists {
-			if retain(curr[:maxLen]) {
-				if err := e.branch(groups[maxLen], false); err != nil { // FIXME
-					return nil, err
-				}
-			} else {
-				if err := e.branchHash(groups[maxLen], false); err != nil { // FIXME
-					return nil, err
-				}
-			}
-			if h != nil {
-				if err := h(curr[:maxLen], e.topHash()[1:]); err != nil {
-					return nil, err
-				}
-			}
-		}
-		groups = groups[:maxLen]
-		// Check the end of recursion
-		if precLen == 0 {
-			return groups, nil
-		}
-		// Identify preceding key for the buildExtensions invocation
-		curr = curr[:precLen]
-		for len(groups) > 0 && groups[len(groups)-1] == 0 {
-			groups = groups[:len(groups)-1]
-		}
-	}
-	return nil, nil
-
 }

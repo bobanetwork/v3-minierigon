@@ -29,8 +29,6 @@ import (
 
 	"github.com/ledgerwatch/erigon/common/u256"
 	"github.com/ledgerwatch/erigon/crypto"
-	"github.com/ledgerwatch/erigon/params"
-	"github.com/ledgerwatch/secp256k1"
 	"github.com/ledgerwatch/log/v3"
 )
 
@@ -261,9 +259,8 @@ func (sg Signer) SenderWithContext(context *secp256k1.Context, tx Transaction) (
 	case *DepositTransaction:
 		// This type contains an explicit From: field
 		log.Debug("MMDBG transaction_signing DepositTransaction handler")
-		sender,_ := tx.GetSender()
+		sender, _ := tx.GetSender()
 		return sender, nil
-		
 	default:
 		return libcommon.Address{}, ErrTxTypeNotSupported
 	}

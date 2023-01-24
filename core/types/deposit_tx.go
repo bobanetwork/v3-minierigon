@@ -30,58 +30,55 @@ import (
 	//"math/bits"
 
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/chain"
+	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon/common"
 	//"github.com/ledgerwatch/erigon/common/u256"
-	"github.com/ledgerwatch/erigon/params"
+	"bytes"
+	rlp2 "github.com/ethereum/go-ethereum/rlp" // Use this one to avoid a bunch of BS with the ledgerwatch/erigon/rlp version
 	"github.com/ledgerwatch/erigon/rlp"
 	"github.com/ledgerwatch/log/v3"
-	"bytes"
-	rlp2 "github.com/ethereum/go-ethereum/rlp"	// Use this one to avoid a bunch of BS with the ledgerwatch/erigon/rlp version
-
 )
-
 
 // DepositTransaction is the transaction data of regular Ethereum transactions.
 type DepositTransaction struct {
 	TransactionMisc
-	
-	SourceHash *common.Hash
+
+	SourceHash *libcommon.Hash
 	Nonce      uint64
-	From       *common.Address
-	To         *common.Address
+	From       *libcommon.Address
+	To         *libcommon.Address
 	Mint       *uint256.Int
 	Value      *uint256.Int
 	GasLimit   uint64
 	IsSystemTx bool
-	Data	   []byte
+	Data       []byte
 }
 
-
-func (tx DepositTransaction) GetGas() uint64 { return tx.GasLimit }
-func (tx DepositTransaction) GetPrice() *uint256.Int { return uint256.NewInt(0) }
-func (tx DepositTransaction) GetTip() *uint256.Int { return uint256.NewInt(0) }
+func (tx DepositTransaction) GetGas() uint64          { return tx.GasLimit }
+func (tx DepositTransaction) GetPrice() *uint256.Int  { return uint256.NewInt(0) }
+func (tx DepositTransaction) GetTip() *uint256.Int    { return uint256.NewInt(0) }
 func (tx DepositTransaction) GetFeeCap() *uint256.Int { return uint256.NewInt(0) }
-func (tx DepositTransaction) GetNonce() uint64 { return tx.Nonce }
+func (tx DepositTransaction) GetNonce() uint64        { return tx.Nonce }
 func (tx DepositTransaction) GetEffectiveGasTip(baseFee *uint256.Int) *uint256.Int {
-/*
-	if baseFee == nil {
-		return tx.GetTip()
-	}
-	gasFeeCap := tx.GetFeeCap()
-	// return 0 because effectiveFee cant be < 0
-	if gasFeeCap.Lt(baseFee) {
-		return uint256.NewInt(0)
-	}
-	effectiveFee := new(uint256.Int).Sub(gasFeeCap, baseFee)
-	if tx.GetTip().Lt(effectiveFee) {
-		return tx.GetTip()
-	} else {
-		return effectiveFee
-	}
-*/
+	/*
+		if baseFee == nil {
+			return tx.GetTip()
+		}
+		gasFeeCap := tx.GetFeeCap()
+		// return 0 because effectiveFee cant be < 0
+		if gasFeeCap.Lt(baseFee) {
+			return uint256.NewInt(0)
+		}
+		effectiveFee := new(uint256.Int).Sub(gasFeeCap, baseFee)
+		if tx.GetTip().Lt(effectiveFee) {
+			return tx.GetTip()
+		} else {
+			return effectiveFee
+		}
+	*/
 	return uint256.NewInt(0)
 }
-
 
 func (tx DepositTransaction) Cost() *uint256.Int {
 	log.Warn("MMDBG dtX Cost")
@@ -99,29 +96,27 @@ func (tx DepositTransaction) GetData() []byte {
 }
 
 func (tx DepositTransaction) Protected() bool {
-	return true	// FIXME
+	return true // FIXME
 }
-
 
 // copy creates a deep copy of the transaction data and initializes all fields.
 func (tx DepositTransaction) copy() *DepositTransaction {
 	cpy := &DepositTransaction{
 		SourceHash: tx.SourceHash,
-		Nonce: tx.Nonce,
-		From: tx.From,
-		To: tx.To,
-		Mint: tx.Mint,
-		Value: tx.Value,
-		GasLimit: tx.GasLimit,
+		Nonce:      tx.Nonce,
+		From:       tx.From,
+		To:         tx.To,
+		Mint:       tx.Mint,
+		Value:      tx.Value,
+		GasLimit:   tx.GasLimit,
 		IsSystemTx: tx.IsSystemTx,
-		Data: common.CopyBytes(tx.Data),
+		Data:       common.CopyBytes(tx.Data),
 	}
-
 
 	return cpy
 }
 
-
+/*
 func (tx *DepositTransaction) Size() common.StorageSize {
 	log.Warn("MMDBG dtX Size")
 	if size := tx.size.Load(); size != nil {
@@ -131,7 +126,7 @@ func (tx *DepositTransaction) Size() common.StorageSize {
 	tx.size.Store(common.StorageSize(c))
 	return common.StorageSize(c)
 }
-
+*/
 
 // MarshalBinary returns the canonical encoding of the transaction.
 // For legacy transactions, it returns the RLP encoding. For EIP-2718 typed
@@ -141,10 +136,9 @@ func (tx DepositTransaction) MarshalBinary(w io.Writer) error {
 	return tx.EncodeRLP(w)
 }
 
-
 // EncodeRLP implements rlp.Encoder
 func (tx DepositTransaction) EncodeRLP(w io.Writer) error {
-	
+
 	var bb bytes.Buffer
 	buf := rlp2.NewEncoderBuffer(&bb)
 	buf.WriteUint64(DepositTxType)
@@ -158,10 +152,10 @@ func (tx DepositTransaction) EncodeRLP(w io.Writer) error {
 	buf.WriteBool(tx.IsSystemTx)
 	buf.WriteBytes(tx.Data)
 	buf.ListEnd(idx1)
-	
+
 	//log.Debug("MMDBG EncodeRLP", "bufBytes", buf.ToBytes())
 	w.Write(buf.ToBytes())
-	
+
 	return nil
 }
 
@@ -169,18 +163,17 @@ func (tx DepositTransaction) EncodeRLP(w io.Writer) error {
 func (tx *DepositTransaction) DecodeRLP(s *rlp.Stream) error {
 	var err error
 	var b []byte
-		
+
 	if _, err := s.List(); err != nil {
 		return fmt.Errorf("list header: %w", err)
 	}
-	
-	tx.Nonce = 0xffff_ffff_ffff_fffd  // DepositsNonce from Optimism
-	
-	
+
+	tx.Nonce = 0xffff_ffff_ffff_fffd // DepositsNonce from Optimism
+
 	if b, err = s.Bytes(); err != nil {
 		return fmt.Errorf("read SourceHash: %w", err)
 	}
-	tx.SourceHash = new(common.Hash)
+	tx.SourceHash = new(libcommon.Hash)
 	tx.SourceHash.SetBytes(b)
 
 	if b, err = s.Bytes(); err != nil {
@@ -189,7 +182,7 @@ func (tx *DepositTransaction) DecodeRLP(s *rlp.Stream) error {
 	if len(b) != 20 {
 		return fmt.Errorf("wrong size for From: %d", len(b))
 	}
-	tx.From = &common.Address{}
+	tx.From = &libcommon.Address{}
 	copy((*tx.From)[:], b)
 
 	if b, err = s.Bytes(); err != nil {
@@ -198,41 +191,41 @@ func (tx *DepositTransaction) DecodeRLP(s *rlp.Stream) error {
 	if len(b) != 20 {
 		return fmt.Errorf("wrong size for To: %d", len(b))
 	}
-	tx.To = &common.Address{}
+	tx.To = &libcommon.Address{}
 	copy((*tx.To)[:], b)
 
 	if b, err = s.Uint256Bytes(); err != nil {
 		return fmt.Errorf("read Mint: %w", err)
 	}
 	tx.Mint = new(uint256.Int).SetBytes(b)
-	
+
 	if b, err = s.Uint256Bytes(); err != nil {
 		return fmt.Errorf("read Value: %w", err)
 	}
 	tx.Value = new(uint256.Int).SetBytes(b)
-	
+
 	if tx.GasLimit, err = s.Uint(); err != nil {
 		return fmt.Errorf("read GasLimit: %w", err)
 	}
-	
+
 	if tx.IsSystemTx, err = s.Bool(); err != nil {
 		return fmt.Errorf("read IsSystemTx: %w", err)
 	}
-	
+
 	if tx.Data, err = s.Bytes(); err != nil {
 		return fmt.Errorf("read Data: %w", err)
 	}
-	
+
 	if err = s.ListEnd(); err != nil {
 		return fmt.Errorf("close tx struct: %w", err)
 	}
-	
+
 	log.Debug("MMDBG DecodeRLP successful", "tx", tx)
 	return nil
 }
 
 // AsMessage returns the transaction as a core.Message.
-func (tx DepositTransaction) AsMessage(s Signer, _ *big.Int, _ *params.Rules) (Message, error) {
+func (tx DepositTransaction) AsMessage(s Signer, _ *big.Int, _ *chain.Rules) (Message, error) {
 	//log.Warn("MMDBG dtX AsMessage")
 	msg := Message{
 		sourceHash: tx.SourceHash,
@@ -258,34 +251,33 @@ func (tx *DepositTransaction) WithSignature(signer Signer, sig []byte) (Transact
 	log.Warn("MMDBG dtX WithSignature")
 	cpy := tx.copy()
 	/*
-	r, s, v, err := signer.SignatureValues(tx, sig)
-	if err != nil {
-		return nil, err
-	}
-	cpy.R.Set(r)
-	cpy.S.Set(s)
-	cpy.V.Set(v)
+		r, s, v, err := signer.SignatureValues(tx, sig)
+		if err != nil {
+			return nil, err
+		}
+		cpy.R.Set(r)
+		cpy.S.Set(s)
+		cpy.V.Set(v)
 	*/
 	return cpy, nil
 }
 
-func (tx *DepositTransaction) FakeSign(address common.Address) (Transaction, error) {
+func (tx *DepositTransaction) FakeSign(address libcommon.Address) (Transaction, error) {
 	log.Warn("MMDBG dtX FakeSign")
 	cpy := tx.copy()
-//	cpy.R.Set(u256.Num1)
-//	cpy.S.Set(u256.Num1)
-//	cpy.V.Set(u256.Num4)
-//	cpy.from.Store(address)
+	//	cpy.R.Set(u256.Num1)
+	//	cpy.S.Set(u256.Num1)
+	//	cpy.V.Set(u256.Num4)
+	//	cpy.from.Store(address)
 	return cpy, nil
 }
 
-
 // Hash computes the hash (but not for signatures!)
-func (tx *DepositTransaction) Hash() common.Hash {
+func (tx *DepositTransaction) Hash() libcommon.Hash {
 	//log.Warn("MMDBG dtX Hash")
 
 	if hash := tx.hash.Load(); hash != nil {
-		return *hash.(*common.Hash)
+		return *hash.(*libcommon.Hash)
 	}
 	hash := rlpHash([]interface{}{
 		tx.SourceHash,
@@ -302,8 +294,8 @@ func (tx *DepositTransaction) Hash() common.Hash {
 
 }
 
-func (tx DepositTransaction) SigningHash(chainID *big.Int) common.Hash {
-	return common.Hash{} // FIXME
+func (tx DepositTransaction) SigningHash(chainID *big.Int) libcommon.Hash {
+	return libcommon.Hash{} // FIXME
 }
 
 /*
@@ -334,17 +326,17 @@ func (tx DepositTransaction) Type() byte { return DepositTxType }
 
 func (tx DepositTransaction) RawSignatureValues() (*uint256.Int, *uint256.Int, *uint256.Int) {
 	log.Warn("MMDBG dtX RawSignatureValues")
-	return uint256.NewInt(0),uint256.NewInt(0),uint256.NewInt(0)
+	return uint256.NewInt(0), uint256.NewInt(0), uint256.NewInt(0)
 }
 
 func (tx DepositTransaction) GetChainID() *uint256.Int {
 	log.Warn("MMDBG dtX GetChainID")
 	return new(uint256.Int).SetUint64(901) // FIXME
 }
-func (tx DepositTransaction) GetSender() (common.Address, bool) {
+func (tx DepositTransaction) GetSender() (libcommon.Address, bool) {
 	return *tx.From, true
 }
-func (tx DepositTransaction) GetTo() (*common.Address) {
+func (tx DepositTransaction) GetTo() *libcommon.Address {
 	return tx.To
 }
 
@@ -359,10 +351,10 @@ func (tx DepositTransaction) IsStarkNet() bool {
 	return false
 }
 
-func (tx *DepositTransaction) Sender(signer Signer) (common.Address, error) {
+func (tx *DepositTransaction) Sender(signer Signer) (libcommon.Address, error) {
 	return *tx.From, nil
 }
-func (tx *DepositTransaction) SetSender(addr common.Address) {
+func (tx *DepositTransaction) SetSender(addr libcommon.Address) {
 	log.Warn("MMDBG dtX SetSender")
 	// NOP - FIXME? ct.from.Store(addr)
 }

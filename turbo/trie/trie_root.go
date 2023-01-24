@@ -3,11 +3,11 @@ package trie
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"encoding/hex"
+	"errors"
 	"fmt"
-	"math/bits"
 	"math/big"
+	"math/bits"
 	"time"
 
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
@@ -96,8 +96,8 @@ type FlatDBTrieLoader struct {
 	hc              HashCollector2
 	shc             StorageHashCollector2
 
-	tmpProof        []hexutil.Bytes
-	mmProof         *[]hexutil.Bytes
+	tmpProof []hexutil.Bytes
+	mmProof  *[]hexutil.Bytes
 }
 
 // RootHashAggregator - calculates Merkle trie root hash from incoming data stream
@@ -225,16 +225,16 @@ type AccountResult struct {
 	Code         hexutil.Bytes   `json:"code"` // seemingly not needed on client, but for method above
 	AccountProof []hexutil.Bytes `json:"accountProof"`
 
-	Address     libcommon.Address `json:"address"`
-	Balance     *hexutil.Big      `json:"balance"`
-	CodeHash    libcommon.Hash    `json:"codeHash"`
-	Nonce       hexutil.Uint64    `json:"nonce"`
-	StorageHash libcommon.Hash    `json:"storageHash"`
-	Root        libcommon.Hash    `json:"root"` // possibly not needed
-	StorageProof []StorageResult  `json:"storageProof"`
+	Address      libcommon.Address `json:"address"`
+	Balance      *hexutil.Big      `json:"balance"`
+	CodeHash     libcommon.Hash    `json:"codeHash"`
+	Nonce        hexutil.Uint64    `json:"nonce"`
+	StorageHash  libcommon.Hash    `json:"storageHash"`
+	Root         libcommon.Hash    `json:"root"` // possibly not needed
+	StorageProof []StorageResult   `json:"storageProof"`
 }
 
-func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, acc accounts.Account, sp *[]StorageResult) (error) {
+func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, acc accounts.Account, sp *[]StorageResult) error {
 	var T *Trie = New(EmptyRoot)
 	var accWithInc [40]byte
 
@@ -247,10 +247,10 @@ func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, a
 		log.Debug("MMGP-1 canUse", "prefix", hexutil.Bytes(prefix), "retain", retain, "nC", nextCreated)
 		return !retain, nextCreated
 	}
-	storageTrie := StorageTrie(canUse, l.shc, trieStorageC, /* quit */ nil)
+	storageTrie := StorageTrie(canUse, l.shc, trieStorageC /* quit */, nil)
 	ss, err := tx.CursorDupSort(kv.HashedStorage)
 
-	copy(accWithInc[:],addrHash.Bytes())
+	copy(accWithInc[:], addrHash.Bytes())
 	binary.BigEndian.PutUint64(accWithInc[32:], acc.Incarnation)
 	log.Debug("MMGP-1 accWithInc", "aWI", hexutil.Bytes(accWithInc[:]))
 
@@ -260,30 +260,30 @@ func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, a
 		for vS, err3 := ss.SeekBothRange(accWithInc[:], storageTrie.FirstNotCoveredPrefix()); vS != nil && cnt < 100; _, vS, err3 = ss.NextDup() {
 			sk := vS[:32]
 			sv := vS[32:]
-			log.Debug("MMGP-1 SeekBothRange", "cnt", cnt, "err3", err3,  "sk", hexutil.Bytes(sk), "sv", hexutil.Bytes(sv))
+			log.Debug("MMGP-1 SeekBothRange", "cnt", cnt, "err3", err3, "sk", hexutil.Bytes(sk), "sv", hexutil.Bytes(sv))
 
 			T.Update(sk, sv)
-			cnt++	// Previously used to detect (and break from) an infinite loop, now only used in a log message. Can be removed.
+			cnt++ // Previously used to detect (and break from) an infinite loop, now only used in a log message. Can be removed.
 		}
-		if len(ihKS)==0 {
+		if len(ihKS) == 0 {
 			break
 		}
 	}
 	log.Debug("MMGP-1 StorageTrie", "items", cnt, "root", hexutil.Bytes(T.Root()), "expected", acc.Root)
-	if common.BytesToHash(T.Root()) != acc.Root {
+	if libcommon.BytesToHash(T.Root()) != acc.Root {
 		return errors.New("StorageTrie root mismatch")
 	}
 
-	for idx,_ := range (*sp) {
-		sK := common.HexToHash((*sp)[idx].Key)
-		sHashed,err := common.HashData(sK[:])
+	for idx, _ := range *sp {
+		sK := libcommon.HexToHash((*sp)[idx].Key)
+		sHashed, err := common.HashData(sK[:])
 		if err != nil {
 			return err
 		}
 
 		target_key := sHashed[:]
 
-		tmpVal,found := T.Get(target_key)
+		tmpVal, found := T.Get(target_key)
 		log.Debug("MMGP-1 Proving for", "target_key", hexutil.Bytes(target_key), "found", found, "value", tmpVal)
 
 		var iBig big.Int
@@ -291,14 +291,14 @@ func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, a
 		(*sp)[idx].Value = new(hexutil.Big)
 		*((*sp)[idx].Value) = hexutil.Big(iBig)
 
-		pp,err := T.Prove(target_key, 0, true)
+		pp, err := T.Prove(target_key, 0, true)
 		if err != nil {
 			return err
 		}
 
-		for i := 0; i<len(pp); i++ {
-		  item := hexutil.Bytes(pp[i])
-		  (*sp)[idx].Proof = append((*sp)[idx].Proof, item.String())
+		for i := 0; i < len(pp); i++ {
+			item := hexutil.Bytes(pp[i])
+			(*sp)[idx].Proof = append((*sp)[idx].Proof, item.String())
 		}
 	}
 	log.Debug("MMGP-1 CalcStorageProof done", "root", hexutil.Bytes(T.Root()), "sp", sp)
@@ -620,17 +620,17 @@ func (r *RootHashAggregator) Receive(itemType StreamItem,
 		}
 
 		/*
-		if r.proofMatch != nil && r.proofMatch.Retain(accountKey) {
-			if r.trace {
-				log.Debug("MMGP-2  RHA ProofMatch", "accountKey", hexutil.Bytes(accountKey), "val", accountValue)
+			if r.proofMatch != nil && r.proofMatch.Retain(accountKey) {
+				if r.trace {
+					log.Debug("MMGP-2  RHA ProofMatch", "accountKey", hexutil.Bytes(accountKey), "val", accountValue)
+				}
+				r.proofAccount.Initialised = accountValue.Initialised
+				r.proofAccount.Nonce = accountValue.Nonce
+				r.proofAccount.Balance = accountValue.Balance
+				r.proofAccount.Root = accountValue.Root
+				r.proofAccount.CodeHash = accountValue.CodeHash
+				r.proofAccount.Incarnation = accountValue.Incarnation
 			}
-			r.proofAccount.Initialised = accountValue.Initialised
-			r.proofAccount.Nonce = accountValue.Nonce
-			r.proofAccount.Balance = accountValue.Balance
-			r.proofAccount.Root = accountValue.Root
-			r.proofAccount.CodeHash = accountValue.CodeHash
-			r.proofAccount.Incarnation = accountValue.Incarnation
-		}
 		*/
 	case AHashStreamItem:
 		r.advanceKeysAccount(accountKey, false /* terminator */)
