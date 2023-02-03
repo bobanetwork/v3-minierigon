@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"sync"
 
 	"github.com/c2h5oh/datasize"
@@ -35,9 +34,7 @@ import (
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
-	"github.com/ledgerwatch/log/v3"
-	"golang.org/x/exp/slices"
-
+	"github.com/ledgerwatch/erigon-lib/kv/rawdbv3"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/common/math"
@@ -50,6 +47,8 @@ import (
 	"github.com/ledgerwatch/erigon/params"
 	"github.com/ledgerwatch/erigon/params/networkname"
 	"github.com/ledgerwatch/erigon/turbo/trie"
+	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/exp/slices"
 )
 
 //go:generate gencodec -type Genesis -field-override genesisSpecMarshaling -out gen_genesis.go
@@ -97,7 +96,7 @@ var genesisTmpDB kv.RwDB
 var genesisDBLock *sync.Mutex
 
 func init() {
-	genesisTmpDB = mdbx.NewMDBX(log.New()).InMem(os.TempDir()).MapSize(2 * datasize.GB).PageSize(2 * 4096).MustOpen()
+	genesisTmpDB = mdbx.NewMDBX(log.New()).InMem("").MapSize(2 * datasize.GB).PageSize(2 * 4096).MustOpen()
 	genesisDBLock = &sync.Mutex{}
 }
 
@@ -509,7 +508,7 @@ func (g *Genesis) Write(tx kv.RwTx) (*types.Block, *state.IntraBlockState, error
 	if err := rawdb.WriteBlock(tx, block); err != nil {
 		return nil, nil, err
 	}
-	if err := rawdb.TxNums.WriteForGenesis(tx, 1); err != nil {
+	if err := rawdbv3.TxNums.WriteForGenesis(tx, 1); err != nil {
 		return nil, nil, err
 	}
 	if err := rawdb.WriteReceipts(tx, block.NumberU64(), nil); err != nil {
@@ -549,7 +548,7 @@ func (g *Genesis) Write(tx kv.RwTx) (*types.Block, *state.IntraBlockState, error
 	if err := rawdb.WriteTotalIssued(tx, 0, genesisIssuance); err != nil {
 		return nil, nil, err
 	}
-	return block, statedb, rawdb.WriteTotalBurnt(tx, 0, common.Big0)
+	return block, statedb, rawdb.WriteTotalBurnt(tx, 0, libcommon.Big0)
 }
 
 // MustCommit writes the genesis block and state to db, panicking on error.

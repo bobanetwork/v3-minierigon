@@ -24,6 +24,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	kv2 "github.com/ledgerwatch/erigon-lib/kv/mdbx"
+	"github.com/ledgerwatch/erigon-lib/kv/rawdbv3"
 	libstate "github.com/ledgerwatch/erigon-lib/state"
 	state2 "github.com/ledgerwatch/erigon-lib/state"
 	"github.com/ledgerwatch/log/v3"
@@ -109,7 +110,7 @@ func ExecV3(ctx context.Context,
 	parallel bool, rs *state.StateV3, logPrefix string,
 	logger log.Logger,
 	maxBlockNum uint64,
-) (err error) {
+) error {
 	batchSize, chainDb := cfg.batchSize, cfg.db
 	blockReader := cfg.blockReader
 	agg, engine := cfg.agg, cfg.engine
@@ -118,6 +119,7 @@ func ExecV3(ctx context.Context,
 
 	useExternalTx := applyTx != nil
 	if !useExternalTx && !parallel {
+		var err error
 		applyTx, err = chainDb.BeginRw(ctx)
 		if err != nil {
 			return err
@@ -144,13 +146,13 @@ func ExecV3(ctx context.Context,
 			defer agg.StartWrites().FinishWrites()
 		}
 
-		_maxTxNum, err := rawdb.TxNums.Max(applyTx, maxBlockNum)
+		_maxTxNum, err := rawdbv3.TxNums.Max(applyTx, maxBlockNum)
 		if err != nil {
 			return err
 		}
 		maxTxNum.Store(_maxTxNum)
 		if block > 0 {
-			_outputTxNum, err := rawdb.TxNums.Max(applyTx, execStage.BlockNumber)
+			_outputTxNum, err := rawdbv3.TxNums.Max(applyTx, execStage.BlockNumber)
 			if err != nil {
 				return err
 			}
@@ -160,13 +162,13 @@ func ExecV3(ctx context.Context,
 		}
 	} else {
 		if err := chainDb.View(ctx, func(tx kv.Tx) error {
-			_maxTxNum, err := rawdb.TxNums.Max(tx, maxBlockNum)
+			_maxTxNum, err := rawdbv3.TxNums.Max(tx, maxBlockNum)
 			if err != nil {
 				return err
 			}
 			maxTxNum.Store(_maxTxNum)
 			if block > 0 {
-				_outputTxNum, err := rawdb.TxNums.Max(tx, execStage.BlockNumber)
+				_outputTxNum, err := rawdbv3.TxNums.Max(tx, execStage.BlockNumber)
 				if err != nil {
 					return err
 				}
@@ -483,6 +485,7 @@ func ExecV3(ctx context.Context,
 
 	var b *types.Block
 	var blockNum uint64
+	var err error
 Loop:
 	for blockNum = block; blockNum <= maxBlockNum; blockNum++ {
 		inputBlockNum.Store(blockNum)
@@ -589,13 +592,13 @@ Loop:
 					if ok := rs.RegisterSender(txTask); ok {
 						currentQueueSize := rs.AddWork(txTask)
 						if currentQueueSize > queueSize {
-							time.Sleep(100 * time.Microsecond)
+							time.Sleep(10 * time.Microsecond)
 						} else {
 							rwsLock.RLock()
 							needWait := rws.Len() > queueSize
 							rwsLock.RUnlock()
 							if needWait {
-								time.Sleep(100 * time.Microsecond)
+								time.Sleep(10 * time.Microsecond)
 							}
 						}
 					}
@@ -788,23 +791,22 @@ func reconstituteStep(last bool,
 	chainConfig *chain.Config, logger log.Logger, genesis *core.Genesis, engine consensus.Engine,
 	batchSize datasize.ByteSize, s *StageState, blockNum uint64, total uint64,
 ) error {
-	var err error
 	var startOk, endOk bool
 	startTxNum, endTxNum := as.TxNumRange()
 	var startBlockNum, endBlockNum uint64 // First block which is not covered by the history snapshot files
-	if err := chainDb.View(ctx, func(tx kv.Tx) error {
-		startOk, startBlockNum, err = rawdb.TxNums.FindBlockNum(tx, startTxNum)
+	if err := chainDb.View(ctx, func(tx kv.Tx) (err error) {
+		startOk, startBlockNum, err = rawdbv3.TxNums.FindBlockNum(tx, startTxNum)
 		if err != nil {
 			return err
 		}
 		if startBlockNum > 0 {
 			startBlockNum--
-			startTxNum, err = rawdb.TxNums.Min(tx, startBlockNum)
+			startTxNum, err = rawdbv3.TxNums.Min(tx, startBlockNum)
 			if err != nil {
 				return err
 			}
 		}
-		endOk, endBlockNum, err = rawdb.TxNums.FindBlockNum(tx, endTxNum)
+		endOk, endBlockNum, err = rawdbv3.TxNums.FindBlockNum(tx, endTxNum)
 		if err != nil {
 			return err
 		}
@@ -869,6 +871,7 @@ func reconstituteStep(last bool,
 		}
 	}()
 	for i := 0; i < workerCount; i++ {
+		var err error
 		if roTxs[i], err = db.BeginRo(ctx); err != nil {
 			return err
 		}
@@ -898,7 +901,7 @@ func reconstituteStep(last bool,
 	prevRollbackCount := uint64(0)
 	prevTime := time.Now()
 	reconDone := make(chan struct{})
-	var bn uint64
+	//var bn uint64
 	go func() {
 		for {
 			select {
@@ -923,23 +926,22 @@ func reconstituteStep(last bool,
 				prevTime = currentTime
 				prevCount = count
 				prevRollbackCount = rollbackCount
-				syncMetrics[stages.Execution].Set(bn)
 				log.Info(fmt.Sprintf("[%s] State reconstitution", s.LogPrefix()), "overall progress", fmt.Sprintf("%.2f%%", progress),
 					"step progress", fmt.Sprintf("%.2f%%", stepProgress),
 					"tx/s", fmt.Sprintf("%.1f", speedTx), "workCh", fmt.Sprintf("%d/%d", len(workCh), cap(workCh)),
-					"repeat ratio", fmt.Sprintf("%.2f%%", repeatRatio), "queue.len", rs.QueueLen(), "blk", bn,
+					"repeat ratio", fmt.Sprintf("%.2f%%", repeatRatio), "queue.len", rs.QueueLen(), "blk", syncMetrics[stages.Execution].Get(),
 					"buffer", fmt.Sprintf("%s/%s", common.ByteCount(sizeEstimate), common.ByteCount(commitThreshold)),
 					"alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 				if sizeEstimate >= commitThreshold {
 					t := time.Now()
-					if err = func() error {
+					if err := func() error {
 						lock.Lock()
 						defer lock.Unlock()
 						for i := 0; i < workerCount; i++ {
 							roTxs[i].Rollback()
 						}
 						if err := db.Update(ctx, func(tx kv.RwTx) error {
-							if err = rs.Flush(tx); err != nil {
+							if err := rs.Flush(tx); err != nil {
 								return err
 							}
 							return nil
@@ -947,6 +949,7 @@ func reconstituteStep(last bool,
 							return err
 						}
 						for i := 0; i < workerCount; i++ {
+							var err error
 							if roTxs[i], err = db.BeginRo(ctx); err != nil {
 								return err
 							}
@@ -966,6 +969,7 @@ func reconstituteStep(last bool,
 	var b *types.Block
 	var txKey [8]byte
 	getHeaderFunc := func(hash common.Hash, number uint64) (h *types.Header) {
+		var err error
 		if err = chainDb.View(ctx, func(tx kv.Tx) error {
 			h, err = blockReader.Header(ctx, tx, hash, number)
 			if err != nil {
@@ -978,7 +982,9 @@ func reconstituteStep(last bool,
 		}
 		return h
 	}
-	for bn = startBlockNum; bn <= endBlockNum; bn++ {
+
+	var err error // avoid declare global mutable variable
+	for bn := startBlockNum; bn <= endBlockNum; bn++ {
 		t = time.Now()
 		b, err = blockWithSenders(chainDb, nil, blockReader, bn)
 		if err != nil {
@@ -1040,6 +1046,7 @@ func reconstituteStep(last bool,
 		}
 
 		core.BlockExecutionTimer.UpdateDuration(t)
+		syncMetrics[stages.Execution].Set(bn)
 	}
 	close(workCh)
 	wg.Wait()
@@ -1247,22 +1254,33 @@ func ReconstituteState(ctx context.Context, s *StageState, dirs datadir.Dirs, wo
 		return err
 	}
 
+	// Incremental reconstitution, step by step (snapshot range by snapshot range)
+	aggSteps, err := agg.MakeSteps()
+	if err != nil {
+		return err
+	}
+	if len(aggSteps) == 0 {
+		return nil
+	}
+	lastStep := aggSteps[len(aggSteps)-1]
+
 	var ok bool
 	var blockNum uint64 // First block which is not covered by the history snapshot files
 	var txNum uint64
 	if err := chainDb.View(ctx, func(tx kv.Tx) error {
-		ok, blockNum, err = rawdb.TxNums.FindBlockNum(tx, agg.EndTxNumMinimax())
+		_, toTxNum := lastStep.TxNumRange()
+		ok, blockNum, err = rawdbv3.TxNums.FindBlockNum(tx, toTxNum)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			return fmt.Errorf("blockNum for mininmaxTxNum=%d not found", agg.EndTxNumMinimax())
+			return fmt.Errorf("blockNum for mininmaxTxNum=%d not found", toTxNum)
 		}
 		if blockNum == 0 {
 			return fmt.Errorf("not enough transactions in the history data")
 		}
 		blockNum--
-		txNum, err = rawdb.TxNums.Max(tx, blockNum)
+		txNum, err = rawdbv3.TxNums.Max(tx, blockNum)
 		if err != nil {
 			return err
 		}
@@ -1289,12 +1307,6 @@ func ReconstituteState(ctx context.Context, s *StageState, dirs datadir.Dirs, wo
 	defer db.Close()
 	defer os.RemoveAll(reconDbPath)
 
-	// Incremental reconstitution, step by step (snapshot range by snapshot range)
-
-	aggSteps, err := agg.MakeSteps()
-	if err != nil {
-		return err
-	}
 	for step, as := range aggSteps {
 		log.Info("Step of incremental reconstitution", "step", step+1, "out of", len(aggSteps), "workers", workerCount)
 		if err := reconstituteStep(step+1 == len(aggSteps), workerCount, ctx, db,

@@ -194,10 +194,6 @@ var (
 		Usage: "Comma separared list of addresses, whoes transactions will traced in transaction pool with debug printing",
 		Value: "",
 	}
-	EnabledIssuance = cli.BoolFlag{
-		Name:  "watch-the-burn",
-		Usage: "Enable WatchTheBurn stage to keep track of ETH issuance",
-	}
 	// Miner settings
 	MiningEnabledFlag = cli.BoolFlag{
 		Name:  "mine",
@@ -713,6 +709,13 @@ var (
 		Usage: "Run without Heimdall service (for testing purpose)",
 	}
 
+	// HeimdallgRPCAddressFlag flag for heimdall gRPC address
+	HeimdallgRPCAddressFlag = cli.StringFlag{
+		Name:  "bor.heimdallgRPC",
+		Usage: "Address of Heimdall gRPC service",
+		Value: "",
+	}
+
 	ConfigFlag = cli.StringFlag{
 		Name:  "config",
 		Usage: "Sets erigon flags from YAML/TOML file",
@@ -873,7 +876,7 @@ func NewP2PConfig(
 	nodeName string,
 	staticPeers []string,
 	trustedPeers []string,
-	port,
+	port uint,
 	protocol uint,
 	allowedPorts []uint,
 ) (*p2p.Config, error) {
@@ -883,6 +886,8 @@ func NewP2PConfig(
 		enodeDBPath = filepath.Join(dirs.Nodes, "eth66")
 	case eth.ETH67:
 		enodeDBPath = filepath.Join(dirs.Nodes, "eth67")
+	case eth.ETH68:
+		enodeDBPath = filepath.Join(dirs.Nodes, "eth68")
 	default:
 		return nil, fmt.Errorf("unknown protocol: %v", protocol)
 	}
@@ -1370,6 +1375,7 @@ func setParlia(ctx *cli.Context, cfg *chain.ParliaConfig, datadir string) {
 func setBorConfig(ctx *cli.Context, cfg *ethconfig.Config) {
 	cfg.HeimdallURL = ctx.String(HeimdallURLFlag.Name)
 	cfg.WithoutHeimdall = ctx.Bool(WithoutHeimdallFlag.Name)
+	cfg.HeimdallgRPCAddress = ctx.String(HeimdallgRPCAddressFlag.Name)
 }
 
 func setMiner(ctx *cli.Context, cfg *params.MiningConfig) {
@@ -1471,7 +1477,11 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 	cfg.SentinelAddr = ctx.String(SentinelAddrFlag.Name)
 	cfg.SentinelPort = ctx.Uint64(SentinelPortFlag.Name)
 
-	cfg.Sync.UseSnapshots = ctx.Bool(SnapshotFlag.Name)
+	cfg.Sync.UseSnapshots = ethconfig.UseSnapshotsByChainName(ctx.String(ChainFlag.Name))
+	if ctx.IsSet(SnapshotFlag.Name) { //force override default by cli
+		cfg.Sync.UseSnapshots = ctx.Bool(SnapshotFlag.Name)
+	}
+
 	cfg.Dirs = nodeConfig.Dirs
 	cfg.Snapshot.KeepBlocks = ctx.Bool(SnapKeepBlocksFlag.Name)
 	cfg.Snapshot.Produce = !ctx.Bool(SnapStopFlag.Name)
@@ -1524,7 +1534,6 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 
 	cfg.Ethstats = ctx.String(EthStatsURLFlag.Name)
 	cfg.P2PEnabled = len(nodeConfig.P2P.SentryAddr) == 0
-	cfg.EnabledIssuance = ctx.Bool(EnabledIssuance.Name)
 	cfg.HistoryV3 = ctx.Bool(HistoryV3Flag.Name)
 	if ctx.IsSet(NetworkIdFlag.Name) {
 		cfg.NetworkID = ctx.Uint64(NetworkIdFlag.Name)
@@ -1593,6 +1602,7 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 
 	if ctx.IsSet(OverrideShanghaiTime.Name) {
 		cfg.OverrideShanghaiTime = BigFlagValue(ctx, OverrideShanghaiTime.Name)
+		cfg.TxPool.OverrideShanghaiTime = cfg.OverrideShanghaiTime
 	}
 
 	if ctx.IsSet(ExternalConsensusFlag.Name) {

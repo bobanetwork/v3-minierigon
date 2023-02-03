@@ -1,115 +1,94 @@
 package commands
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
 	"math/big"
 
 	"github.com/holiman/uint256"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/log/v3"
 
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	types2 "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/log/v3"
 
-	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/core/rawdb"
 	"github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/ethdb/privateapi"
-	"github.com/ledgerwatch/erigon/rlp"
 	"github.com/ledgerwatch/erigon/turbo/rpchelper"
 	"github.com/ledgerwatch/erigon/turbo/trie"
 )
 
-// ExecutionPayloadV1 represents an execution payload (aka block) without withdrawals
-type ExecutionPayloadV1 struct {
-	ParentHash    libcommon.Hash    `json:"parentHash"    gencodec:"required"`
-	FeeRecipient  libcommon.Address `json:"feeRecipient"  gencodec:"required"`
-	StateRoot     libcommon.Hash    `json:"stateRoot"     gencodec:"required"`
-	ReceiptsRoot  libcommon.Hash    `json:"receiptsRoot"  gencodec:"required"`
-	LogsBloom     hexutil.Bytes     `json:"logsBloom"     gencodec:"required"`
-	PrevRandao    libcommon.Hash    `json:"prevRandao"    gencodec:"required"`
-	BlockNumber   hexutil.Uint64    `json:"blockNumber"   gencodec:"required"`
-	GasLimit      hexutil.Uint64    `json:"gasLimit"      gencodec:"required"`
-	GasUsed       hexutil.Uint64    `json:"gasUsed"       gencodec:"required"`
-	Timestamp     hexutil.Uint64    `json:"timestamp"     gencodec:"required"`
-	ExtraData     hexutil.Bytes     `json:"extraData"     gencodec:"required"`
-	BaseFeePerGas *hexutil.Big      `json:"baseFeePerGas" gencodec:"required"`
-	BlockHash     libcommon.Hash    `json:"blockHash"     gencodec:"required"`
-	Transactions  []hexutil.Bytes   `json:"transactions"  gencodec:"required"`
-}
-
-// ExecutionPayloadV2 represents an execution payload (aka block) with withdrawals
-type ExecutionPayloadV2 struct {
-	ParentHash    libcommon.Hash      `json:"parentHash"    gencodec:"required"`
-	FeeRecipient  libcommon.Address   `json:"feeRecipient"  gencodec:"required"`
-	StateRoot     libcommon.Hash      `json:"stateRoot"     gencodec:"required"`
-	ReceiptsRoot  libcommon.Hash      `json:"receiptsRoot"  gencodec:"required"`
+// ExecutionPayload represents an execution payload (aka block)
+type ExecutionPayload struct {
+	ParentHash    common.Hash         `json:"parentHash"    gencodec:"required"`
+	FeeRecipient  common.Address      `json:"feeRecipient"  gencodec:"required"`
+	StateRoot     common.Hash         `json:"stateRoot"     gencodec:"required"`
+	ReceiptsRoot  common.Hash         `json:"receiptsRoot"  gencodec:"required"`
 	LogsBloom     hexutil.Bytes       `json:"logsBloom"     gencodec:"required"`
-	PrevRandao    libcommon.Hash      `json:"prevRandao"    gencodec:"required"`
+	PrevRandao    common.Hash         `json:"prevRandao"    gencodec:"required"`
 	BlockNumber   hexutil.Uint64      `json:"blockNumber"   gencodec:"required"`
 	GasLimit      hexutil.Uint64      `json:"gasLimit"      gencodec:"required"`
 	GasUsed       hexutil.Uint64      `json:"gasUsed"       gencodec:"required"`
 	Timestamp     hexutil.Uint64      `json:"timestamp"     gencodec:"required"`
 	ExtraData     hexutil.Bytes       `json:"extraData"     gencodec:"required"`
 	BaseFeePerGas *hexutil.Big        `json:"baseFeePerGas" gencodec:"required"`
-	BlockHash     libcommon.Hash      `json:"blockHash"     gencodec:"required"`
+	BlockHash     common.Hash         `json:"blockHash"     gencodec:"required"`
 	Transactions  []hexutil.Bytes     `json:"transactions"  gencodec:"required"`
-	Withdrawals   []*types.Withdrawal `json:"withdrawals"   gencodec:"required"`
+	Withdrawals   []*types.Withdrawal `json:"withdrawals"`
 }
 
 // GetPayloadV2Response represents the response of the getPayloadV2 method
 type GetPayloadV2Response struct {
-	ExecutionPayload ExecutionPayloadV2 `json:"executionPayload" gencodec:"required"`
-	BlockValue       *hexutil.Big       `json:"blockValue" gencodec:"required"`
+	ExecutionPayload *ExecutionPayload `json:"executionPayload" gencodec:"required"`
+	BlockValue       *hexutil.Big      `json:"blockValue" gencodec:"required"`
 }
 
 // PayloadAttributes represent the attributes required to start assembling a payload
 type ForkChoiceState struct {
-	HeadHash           libcommon.Hash `json:"headBlockHash"             gencodec:"required"`
-	SafeBlockHash      libcommon.Hash `json:"safeBlockHash"             gencodec:"required"`
-	FinalizedBlockHash libcommon.Hash `json:"finalizedBlockHash"        gencodec:"required"`
+	HeadHash           common.Hash `json:"headBlockHash"             gencodec:"required"`
+	SafeBlockHash      common.Hash `json:"safeBlockHash"             gencodec:"required"`
+	FinalizedBlockHash common.Hash `json:"finalizedBlockHash"        gencodec:"required"`
 }
 
-// PayloadAttributesV1 represent the attributes required to start assembling a payload without withdrawals
-type PayloadAttributesV1 struct {
-	Timestamp             hexutil.Uint64    `json:"timestamp"             gencodec:"required"`
-	PrevRandao            libcommon.Hash    `json:"prevRandao"            gencodec:"required"`
-	SuggestedFeeRecipient libcommon.Address `json:"suggestedFeeRecipient" gencodec:"required"`
-	Transactions          []hexutil.Bytes   `json:"transactions"          gencodec:"required"`
-	NoTxPool              bool              `json:"noTxPool"              gencodec:"required"`
-}
-
-// PayloadAttributesV2 represent the attributes required to start assembling a payload with withdrawals
-type PayloadAttributesV2 struct {
+// PayloadAttributes represent the attributes required to start assembling a payload
+type PayloadAttributes struct {
 	Timestamp             hexutil.Uint64      `json:"timestamp"             gencodec:"required"`
-	PrevRandao            libcommon.Hash      `json:"prevRandao"            gencodec:"required"`
-	SuggestedFeeRecipient libcommon.Address   `json:"suggestedFeeRecipient" gencodec:"required"`
-	Withdrawals           []*types.Withdrawal `json:"withdrawals"           gencodec:"required"`
+	PrevRandao            common.Hash         `json:"prevRandao"            gencodec:"required"`
+	SuggestedFeeRecipient common.Address      `json:"suggestedFeeRecipient" gencodec:"required"`
+	Withdrawals           []*types.Withdrawal `json:"withdrawals"`
+	Transactions          []hexutil.Bytes     `json:"transactions"          gencodec:"required"`
+	NoTxPool              bool                `json:"noTxPool"              gencodec:"required"`
 }
 
 // TransitionConfiguration represents the correct configurations of the CL and the EL
 type TransitionConfiguration struct {
-	TerminalTotalDifficulty *hexutil.Big   `json:"terminalTotalDifficulty" gencodec:"required"`
-	TerminalBlockHash       libcommon.Hash `json:"terminalBlockHash"       gencodec:"required"`
-	TerminalBlockNumber     *hexutil.Big   `json:"terminalBlockNumber"     gencodec:"required"`
+	TerminalTotalDifficulty *hexutil.Big `json:"terminalTotalDifficulty" gencodec:"required"`
+	TerminalBlockHash       common.Hash  `json:"terminalBlockHash"       gencodec:"required"`
+	TerminalBlockNumber     *hexutil.Big `json:"terminalBlockNumber"     gencodec:"required"`
+}
+
+type ExecutionPayloadBodyV1 struct {
+	Transactions [][]byte            `json:"transactions" gencodec:"required"`
+	Withdrawals  []*types.Withdrawal `json:"withdrawals"  gencodec:"required"`
 }
 
 // EngineAPI Beacon chain communication endpoint
 type EngineAPI interface {
-	NewPayloadV1(context.Context, *ExecutionPayloadV1) (map[string]interface{}, error)
-	NewPayloadV2(context.Context, *ExecutionPayloadV2) (map[string]interface{}, error)
-	ForkchoiceUpdatedV1(ctx context.Context, forkChoiceState *ForkChoiceState, payloadAttributes *PayloadAttributesV1) (map[string]interface{}, error)
-	ForkchoiceUpdatedV2(ctx context.Context, forkChoiceState *ForkChoiceState, payloadAttributes *PayloadAttributesV2) (map[string]interface{}, error)
-	GetPayloadV1(ctx context.Context, payloadID hexutil.Bytes) (*ExecutionPayloadV1, error)
+	NewPayloadV1(context.Context, *ExecutionPayload) (map[string]interface{}, error)
+	NewPayloadV2(context.Context, *ExecutionPayload) (map[string]interface{}, error)
+	ForkchoiceUpdatedV1(ctx context.Context, forkChoiceState *ForkChoiceState, payloadAttributes *PayloadAttributes) (map[string]interface{}, error)
+	ForkchoiceUpdatedV2(ctx context.Context, forkChoiceState *ForkChoiceState, payloadAttributes *PayloadAttributes) (map[string]interface{}, error)
+	GetPayloadV1(ctx context.Context, payloadID hexutil.Bytes) (*ExecutionPayload, error)
 	GetPayloadV2(ctx context.Context, payloadID hexutil.Bytes) (*GetPayloadV2Response, error)
 	ExchangeTransitionConfigurationV1(ctx context.Context, transitionConfiguration *TransitionConfiguration) (*TransitionConfiguration, error)
+	GetPayloadBodiesByHashV1(ctx context.Context, hashes []common.Hash) ([]*ExecutionPayloadBodyV1, error)
+	GetPayloadBodiesByRangeV1(ctx context.Context, start uint64, count uint64) ([]*ExecutionPayloadBodyV1, error)
 }
 
 // EngineImpl is implementation of the EngineAPI interface
@@ -131,8 +110,8 @@ func convertPayloadStatus(ctx context.Context, db kv.RoDB, x *remote.EnginePaylo
 		return json, nil
 	}
 
-	latestValidHash := libcommon.Hash(gointerfaces.ConvertH256ToHash(x.LatestValidHash))
-	if latestValidHash == (libcommon.Hash{}) || x.Status == remote.EngineStatus_VALID {
+	latestValidHash := common.Hash(gointerfaces.ConvertH256ToHash(x.LatestValidHash))
+	if latestValidHash == (common.Hash{}) || x.Status == remote.EngineStatus_VALID {
 		json["latestValidHash"] = latestValidHash
 		return json, nil
 	}
@@ -153,7 +132,7 @@ func convertPayloadStatus(ctx context.Context, db kv.RoDB, x *remote.EnginePaylo
 	if isValidHashPos {
 		json["latestValidHash"] = latestValidHash
 	} else {
-		json["latestValidHash"] = libcommon.Hash{}
+		json["latestValidHash"] = common.Hash{}
 	}
 	return json, nil
 }
@@ -167,6 +146,8 @@ func addPayloadId(json map[string]interface{}, payloadId uint64) {
 	}
 }
 
+
+/* FIXME - Merge cleanup
 func (e *EngineImpl) ForkchoiceUpdatedV1(ctx context.Context, forkChoiceState *ForkChoiceState, payloadAttributes *PayloadAttributesV1) (map[string]interface{}, error) {
 	if e.internalCL {
 		log.Error("EXTERNAL CONSENSUS LAYER IS NOT ENABLED, PLEASE RESTART WITH FLAG --externalcl")
@@ -218,35 +199,44 @@ func (e *EngineImpl) ForkchoiceUpdatedV1(ctx context.Context, forkChoiceState *F
 		"payloadStatus": payloadStatus,
 	}
 	addPayloadId(json, reply.PayloadId)
+*/
 
-	return json, nil
+func (e *EngineImpl) ForkchoiceUpdatedV1(ctx context.Context, forkChoiceState *ForkChoiceState, payloadAttributes *PayloadAttributes) (map[string]interface{}, error) {
+	return e.forkchoiceUpdated(1, ctx, forkChoiceState, payloadAttributes)
 }
 
-func (e *EngineImpl) ForkchoiceUpdatedV2(ctx context.Context, forkChoiceState *ForkChoiceState, payloadAttributes *PayloadAttributesV2) (map[string]interface{}, error) {
+func (e *EngineImpl) ForkchoiceUpdatedV2(ctx context.Context, forkChoiceState *ForkChoiceState, payloadAttributes *PayloadAttributes) (map[string]interface{}, error) {
+	return e.forkchoiceUpdated(2, ctx, forkChoiceState, payloadAttributes)
+}
+
+func (e *EngineImpl) forkchoiceUpdated(version uint32, ctx context.Context, forkChoiceState *ForkChoiceState, payloadAttributes *PayloadAttributes) (map[string]interface{}, error) {
 	if e.internalCL {
 		log.Error("EXTERNAL CONSENSUS LAYER IS NOT ENABLED, PLEASE RESTART WITH FLAG --externalcl")
 		return nil, fmt.Errorf("engine api should not be used, restart with --externalcl")
 	}
-	log.Debug("Received ForkchoiceUpdatedV2", "head", forkChoiceState.HeadHash, "safe", forkChoiceState.HeadHash, "finalized", forkChoiceState.FinalizedBlockHash,
+	log.Debug("Received ForkchoiceUpdated", "version", version, "head", forkChoiceState.HeadHash, "safe", forkChoiceState.HeadHash, "finalized", forkChoiceState.FinalizedBlockHash,
 		"build", payloadAttributes != nil)
 
-	var attributesV2 *remote.EnginePayloadAttributesV2
+	var attributes *remote.EnginePayloadAttributes
 	if payloadAttributes != nil {
-		attributes := &remote.EnginePayloadAttributes{
+		attributes = &remote.EnginePayloadAttributes{
+			Version:               1,
 			Timestamp:             uint64(payloadAttributes.Timestamp),
 			PrevRandao:            gointerfaces.ConvertHashToH256(payloadAttributes.PrevRandao),
 			SuggestedFeeRecipient: gointerfaces.ConvertAddressToH160(payloadAttributes.SuggestedFeeRecipient),
 		}
-		withdrawals := privateapi.ConvertWithdrawalsToRpc(payloadAttributes.Withdrawals)
-		attributesV2 = &remote.EnginePayloadAttributesV2{Attributes: attributes, Withdrawals: withdrawals}
+		if version >= 2 && payloadAttributes.Withdrawals != nil {
+			attributes.Version = 2
+			attributes.Withdrawals = privateapi.ConvertWithdrawalsToRpc(payloadAttributes.Withdrawals)
+		}
 	}
-	reply, err := e.api.EngineForkchoiceUpdatedV2(ctx, &remote.EngineForkChoiceUpdatedRequestV2{
+	reply, err := e.api.EngineForkchoiceUpdated(ctx, &remote.EngineForkChoiceUpdatedRequest{
 		ForkchoiceState: &remote.EngineForkChoiceState{
 			HeadBlockHash:      gointerfaces.ConvertHashToH256(forkChoiceState.HeadHash),
 			SafeBlockHash:      gointerfaces.ConvertHashToH256(forkChoiceState.SafeBlockHash),
 			FinalizedBlockHash: gointerfaces.ConvertHashToH256(forkChoiceState.FinalizedBlockHash),
 		},
-		PayloadAttributes: attributesV2,
+		PayloadAttributes: attributes,
 	})
 	if err != nil {
 		return nil, err
@@ -336,6 +326,8 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH libcommon.Hash) 
 }
 
 // NewPayloadV1 processes new payloads (blocks) from the beacon chain without withdrawals.
+
+/* FIXME - Merge cleanup
 // See https://github.com/ethereum/execution-apis/blob/main/src/engine/specification.md#engine_newpayloadv1
 func (e *EngineImpl) NewPayloadV1(ctx context.Context, payload *ExecutionPayloadV1) (map[string]interface{}, error) {
 	if e.internalCL {
@@ -390,25 +382,30 @@ func (e *EngineImpl) NewPayloadV1(ctx context.Context, payload *ExecutionPayload
 	log.Debug("MMDBG <<< NewPayloadV1 Response", "BN", uint64(payload.BlockNumber), "res", res)
 
 	return convertPayloadStatus(ctx, e.db, res)
+*/
+
+// See https://github.com/ethereum/execution-apis/blob/main/src/engine/paris.md#engine_newpayloadv1
+func (e *EngineImpl) NewPayloadV1(ctx context.Context, payload *ExecutionPayload) (map[string]interface{}, error) {
+	return e.newPayload(1, ctx, payload)
 }
 
 // NewPayloadV2 processes new payloads (blocks) from the beacon chain with withdrawals.
-// See https://github.com/ethereum/execution-apis/blob/main/src/engine/specification.md#engine_newpayloadv2
-func (e *EngineImpl) NewPayloadV2(ctx context.Context, payload *ExecutionPayloadV2) (map[string]interface{}, error) {
+// See https://github.com/ethereum/execution-apis/blob/main/src/engine/shanghai.md#engine_newpayloadv2
+func (e *EngineImpl) NewPayloadV2(ctx context.Context, payload *ExecutionPayload) (map[string]interface{}, error) {
+	return e.newPayload(2, ctx, payload)
+}
+
+func (e *EngineImpl) newPayload(version uint32, ctx context.Context, payload *ExecutionPayload) (map[string]interface{}, error) {
 	if e.internalCL {
 		log.Error("EXTERNAL CONSENSUS LAYER IS NOT ENABLED, PLEASE RESTART WITH FLAG --externalcl")
 		return nil, fmt.Errorf("engine api should not be used, restart with --externalcl")
 	}
-	log.Debug("Received NewPayloadV2", "height", uint64(payload.BlockNumber), "hash", payload.BlockHash)
+	log.Debug("Received NewPayload", "version", version, "height", uint64(payload.BlockNumber), "hash", payload.BlockHash)
 
-	var baseFee *uint256.Int
-	if payload.BaseFeePerGas != nil {
-		var overflow bool
-		baseFee, overflow = uint256.FromBig((*big.Int)(payload.BaseFeePerGas))
-		if overflow {
-			log.Warn("NewPayload BaseFeePerGas overflow")
-			return nil, fmt.Errorf("invalid request")
-		}
+	baseFee, overflow := uint256.FromBig((*big.Int)(payload.BaseFeePerGas))
+	if overflow {
+		log.Warn("NewPayload BaseFeePerGas overflow")
+		return nil, fmt.Errorf("invalid request")
 	}
 
 	// Convert slice of hexutil.Bytes to a slice of slice of bytes
@@ -417,6 +414,7 @@ func (e *EngineImpl) NewPayloadV2(ctx context.Context, payload *ExecutionPayload
 		transactions[i] = transaction
 	}
 	ep := &types2.ExecutionPayload{
+		Version:       1,
 		ParentHash:    gointerfaces.ConvertHashToH256(payload.ParentHash),
 		Coinbase:      gointerfaces.ConvertAddressToH160(payload.FeeRecipient),
 		StateRoot:     gointerfaces.ConvertHashToH256(payload.StateRoot),
@@ -432,15 +430,20 @@ func (e *EngineImpl) NewPayloadV2(ctx context.Context, payload *ExecutionPayload
 		BlockHash:     gointerfaces.ConvertHashToH256(payload.BlockHash),
 		Transactions:  transactions,
 	}
-	withdrawals := privateapi.ConvertWithdrawalsToRpc(payload.Withdrawals)
-	res, err := e.api.EngineNewPayloadV2(ctx, &types2.ExecutionPayloadV2{Payload: ep, Withdrawals: withdrawals})
+	if version >= 2 && payload.Withdrawals != nil {
+		ep.Version = 2
+		ep.Withdrawals = privateapi.ConvertWithdrawalsToRpc(payload.Withdrawals)
+	}
+
+	res, err := e.api.EngineNewPayload(ctx, ep)
 	if err != nil {
-		log.Warn("NewPayloadV2", "err", err)
+		log.Warn("NewPayload", "err", err)
 		return nil, err
 	}
 	return convertPayloadStatus(ctx, e.db, res)
 }
 
+/* FIXME - Merge cleanup
 func (e *EngineImpl) GetPayloadV1(ctx context.Context, payloadID hexutil.Bytes) (*ExecutionPayloadV1, error) {
 	log.Debug("MMDBG >>> GetPayloadV1 Request", "id", payloadID)
 	if e.internalCL {
@@ -455,12 +458,11 @@ func (e *EngineImpl) GetPayloadV1(ctx context.Context, payloadID hexutil.Bytes) 
 	if err != nil {
 		return nil, err
 	}
-	var bloom types.Bloom = gointerfaces.ConvertH2048ToBloom(payload.LogsBloom)
 
-	var baseFee *big.Int
-	if payload.BaseFeePerGas != nil {
-		baseFee = gointerfaces.ConvertH256ToUint256Int(payload.BaseFeePerGas).ToBig()
-	}
+*/
+func convertPayloadFromRpc(payload *types2.ExecutionPayload) *ExecutionPayload {
+	var bloom types.Bloom = gointerfaces.ConvertH2048ToBloom(payload.LogsBloom)
+	baseFee := gointerfaces.ConvertH256ToUint256Int(payload.BaseFeePerGas).ToBig()
 
 	// Convert slice of hexutil.Bytes to a slice of slice of bytes
 	transactions := make([]hexutil.Bytes, len(payload.Transactions))
@@ -468,8 +470,8 @@ func (e *EngineImpl) GetPayloadV1(ctx context.Context, payloadID hexutil.Bytes) 
 		transactions[i] = transaction
 	}
 
-	log.Debug("MMDBG <<< GetPayloadV1 Response", "id", payloadID, "Transactions", transactions)
-	return &ExecutionPayloadV1{
+	log.Debug("MMDBG <<< convertPayloadFromRpc Response", "id", payloadID, "Transactions", transactions)
+	res := &ExecutionPayload{
 		ParentHash:    gointerfaces.ConvertH256ToHash(payload.ParentHash),
 		FeeRecipient:  gointerfaces.ConvertH160toAddress(payload.Coinbase),
 		StateRoot:     gointerfaces.ConvertH256ToHash(payload.StateRoot),
@@ -484,30 +486,29 @@ func (e *EngineImpl) GetPayloadV1(ctx context.Context, payloadID hexutil.Bytes) 
 		BaseFeePerGas: (*hexutil.Big)(baseFee),
 		BlockHash:     gointerfaces.ConvertH256ToHash(payload.BlockHash),
 		Transactions:  transactions,
-	}, nil
+	}
+	if payload.Version >= 2 {
+		res.Withdrawals = privateapi.ConvertWithdrawalsFromRpc(payload.Withdrawals)
+	}
+
+	return res
 }
 
-func getTxValueForBlockValue(transaction []byte, baseFee *big.Int) (*big.Int, error) {
-	// calculate blockValue by summing tips - see: https://github.com/ethereum/execution-apis/pull/314
-	s := rlp.NewStream(bytes.NewReader(transaction), uint64(len(transaction)))
-	t, err := types.DecodeTransaction(s)
+func (e *EngineImpl) GetPayloadV1(ctx context.Context, payloadID hexutil.Bytes) (*ExecutionPayload, error) {
+	if e.internalCL {
+		log.Error("EXTERNAL CONSENSUS LAYER IS NOT ENABLED, PLEASE RESTART WITH FLAG --externalcl")
+		return nil, fmt.Errorf("engine api should not be used, restart with --externalcl")
+	}
+
+	decodedPayloadId := binary.BigEndian.Uint64(payloadID)
+	log.Info("Received GetPayloadV1", "payloadId", decodedPayloadId)
+
+	response, err := e.api.EngineGetPayload(ctx, decodedPayloadId)
 	if err != nil {
-		log.Error("Failed to decode transaction", "err", err)
 		return nil, err
 	}
 
-	// convert baseFee to uint256
-	baseFeeUint256, overflow := uint256.FromBig(baseFee)
-	if overflow {
-		log.Warn("baseFee overflow")
-		return nil, fmt.Errorf("baseFee overflow")
-	}
-
-	effectiveTip := t.GetEffectiveGasTip(baseFeeUint256)
-	amount := new(uint256.Int).SetUint64(t.GetGas())
-	amount.Mul(amount, effectiveTip) // gasUsed * effectiveTip = how much goes to the block producer (miner, validator)
-
-	return amount.ToBig(), nil
+	return convertPayloadFromRpc(response.ExecutionPayload), nil
 }
 
 func (e *EngineImpl) GetPayloadV2(ctx context.Context, payloadID hexutil.Bytes) (*GetPayloadV2Response, error) {
@@ -519,47 +520,13 @@ func (e *EngineImpl) GetPayloadV2(ctx context.Context, payloadID hexutil.Bytes) 
 	decodedPayloadId := binary.BigEndian.Uint64(payloadID)
 	log.Info("Received GetPayloadV2", "payloadId", decodedPayloadId)
 
-	ep, err := e.api.EngineGetPayloadV2(ctx, decodedPayloadId)
+	response, err := e.api.EngineGetPayload(ctx, decodedPayloadId)
 	if err != nil {
 		return nil, err
 	}
 
-	payload := ep.Payload
-	var bloom types.Bloom = gointerfaces.ConvertH2048ToBloom(payload.LogsBloom)
-
-	var baseFee *big.Int
-	if payload.BaseFeePerGas != nil {
-		baseFee = gointerfaces.ConvertH256ToUint256Int(payload.BaseFeePerGas).ToBig()
-	}
-
-	blockValue := big.NewInt(0)
-	transactions := make([]hexutil.Bytes, len(payload.Transactions))
-	for i, transaction := range payload.Transactions {
-		transactions[i] = transaction
-		txVal, err := getTxValueForBlockValue(transaction, baseFee)
-		if err != nil {
-			return nil, err
-		}
-		blockValue.Add(blockValue, txVal)
-	}
-
-	epl := ExecutionPayloadV2{
-		ParentHash:    gointerfaces.ConvertH256ToHash(payload.ParentHash),
-		FeeRecipient:  gointerfaces.ConvertH160toAddress(payload.Coinbase),
-		StateRoot:     gointerfaces.ConvertH256ToHash(payload.StateRoot),
-		ReceiptsRoot:  gointerfaces.ConvertH256ToHash(payload.ReceiptRoot),
-		LogsBloom:     bloom[:],
-		PrevRandao:    gointerfaces.ConvertH256ToHash(payload.PrevRandao),
-		BlockNumber:   hexutil.Uint64(payload.BlockNumber),
-		GasLimit:      hexutil.Uint64(payload.GasLimit),
-		GasUsed:       hexutil.Uint64(payload.GasUsed),
-		Timestamp:     hexutil.Uint64(payload.Timestamp),
-		ExtraData:     payload.ExtraData,
-		BaseFeePerGas: (*hexutil.Big)(baseFee),
-		BlockHash:     gointerfaces.ConvertH256ToHash(payload.BlockHash),
-		Transactions:  transactions,
-		Withdrawals:   privateapi.ConvertWithdrawalsFromRpc(ep.Withdrawals),
-	}
+	epl := convertPayloadFromRpc(response.ExecutionPayload)
+	blockValue := gointerfaces.ConvertH256ToUint256Int(response.BlockValue).ToBig()
 	return &GetPayloadV2Response{
 		epl,
 		(*hexutil.Big)(blockValue),
@@ -598,9 +565,90 @@ func (e *EngineImpl) ExchangeTransitionConfigurationV1(ctx context.Context, beac
 
 	return &TransitionConfiguration{
 		TerminalTotalDifficulty: (*hexutil.Big)(terminalTotalDifficulty),
-		TerminalBlockHash:       libcommon.Hash{},
+		TerminalBlockHash:       common.Hash{},
 		TerminalBlockNumber:     (*hexutil.Big)(common.Big0),
 	}, nil
+}
+
+func (e *EngineImpl) GetPayloadBodiesByHashV1(ctx context.Context, hashes []common.Hash) ([]*ExecutionPayloadBodyV1, error) {
+	h := make([]*types2.H256, len(hashes))
+	for i, hash := range hashes {
+		h[i] = gointerfaces.ConvertHashToH256(hash)
+	}
+
+	apiRes, err := e.api.EngineGetPayloadBodiesByHashV1(ctx, &remote.EngineGetPayloadBodiesByHashV1Request{Hashes: h})
+	if err != nil {
+		return nil, err
+	}
+
+	return convertExecutionPayloadV1(apiRes), nil
+}
+
+func (e *EngineImpl) GetPayloadBodiesByRangeV1(ctx context.Context, start uint64, count uint64) ([]*ExecutionPayloadBodyV1, error) {
+	apiRes, err := e.api.EngineGetPayloadBodiesByRangeV1(ctx, &remote.EngineGetPayloadBodiesByRangeV1Request{Start: start, Count: count})
+	if err != nil {
+		return nil, err
+	}
+
+	return convertExecutionPayloadV1(apiRes), nil
+}
+
+var ourCapabilities = []string{
+	"engine_forkchoiceUpdatedV1",
+	"engine_forkchoiceUpdatedV2",
+	"engine_newPayloadV1",
+	"engine_newPayloadV2",
+	"engine_getPayloadV1",
+	"engine_getPayloadV2",
+	"engine_exchangeTransitionConfigurationV1",
+	"engine_getPayloadBodiesByHashV1",
+	"engine_getPayloadBodiesByRangeV1",
+}
+
+func (e *EngineImpl) ExchangeCapabilities(fromCl []string) []string {
+	missingOurs := compareCapabilities(fromCl, ourCapabilities)
+	missingCl := compareCapabilities(ourCapabilities, fromCl)
+
+	if len(missingCl) > 0 || len(missingOurs) > 0 {
+		log.Debug("ExchangeCapabilities mismatches", "cl_unsupported", missingCl, "erigon_unsupported", missingOurs)
+	}
+
+	return ourCapabilities
+}
+
+func compareCapabilities(from []string, to []string) []string {
+	result := make([]string, 0)
+	for _, f := range from {
+		found := false
+		for _, t := range to {
+			if f == t {
+				found = true
+				break
+			}
+		}
+		if !found {
+			result = append(result, f)
+		}
+	}
+
+	return result
+}
+
+func convertExecutionPayloadV1(response *remote.EngineGetPayloadBodiesV1Response) []*ExecutionPayloadBodyV1 {
+	result := make([]*ExecutionPayloadBodyV1, len(response.Bodies))
+	for idx, body := range response.Bodies {
+		if body == nil {
+			result[idx] = nil
+		} else {
+			pl := &ExecutionPayloadBodyV1{
+				Transactions: body.Transactions,
+				Withdrawals:  privateapi.ConvertWithdrawalsFromRpc(body.Withdrawals),
+			}
+			result[idx] = pl
+		}
+	}
+
+	return result
 }
 
 // NewEngineAPI returns EngineImpl instance
