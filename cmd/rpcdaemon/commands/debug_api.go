@@ -307,14 +307,14 @@ func (api *PrivateDebugAPIImpl) AccountAt(ctx context.Context, blockHash common.
 			return nil, err
 		}
 		if !ok || len(v) == 0 {
-			return &AccountResult{}, nil
+			return &trie.AccountResult{}, nil
 		}
 
 		var a accounts.Account
 		if err := a.DecodeForStorage(v); err != nil {
 			return nil, err
 		}
-		result := &AccountResult{}
+		result := &trie.AccountResult{}
 		result.Balance.ToInt().Set(a.Balance.ToBig())
 		result.Nonce = hexutil.Uint64(a.Nonce)
 		result.CodeHash = a.CodeHash

@@ -15,6 +15,7 @@ import (
 	types2 "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
 
+	common2 "github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/core/rawdb"
 	"github.com/ledgerwatch/erigon/core/types"
@@ -22,6 +23,7 @@ import (
 	"github.com/ledgerwatch/erigon/ethdb/privateapi"
 	"github.com/ledgerwatch/erigon/turbo/rpchelper"
 	"github.com/ledgerwatch/erigon/turbo/trie"
+	"github.com/ledgerwatch/erigon/rlp"
 )
 
 // ExecutionPayload represents an execution payload (aka block)
@@ -262,7 +264,7 @@ func (e *EngineImpl) forkchoiceUpdated(version uint32, ctx context.Context, fork
 	return json, nil
 }
 
-func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH libcommon.Hash) error {
+func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) error {
 	if BN == 0 {
 		return nil
 	}
@@ -272,9 +274,9 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH libcommon.Hash) 
 		return err
 	}
 
-	pAddr := libcommon.HexToAddress("0x4200000000000000000000000000000000000016")
+	pAddr := common.HexToAddress("0x4200000000000000000000000000000000000016")
 	pRL := trie.NewRetainList(0)
-	addrHash, err := common.HashData(pAddr[:])
+	addrHash, err := common2.HashData(pAddr[:])
 	if err != nil {
 		return err
 	}
@@ -470,7 +472,7 @@ func convertPayloadFromRpc(payload *types2.ExecutionPayload) *ExecutionPayload {
 		transactions[i] = transaction
 	}
 
-	log.Debug("MMDBG <<< convertPayloadFromRpc Response", "id", payloadID, "Transactions", transactions)
+	log.Debug("MMDBG <<< convertPayloadFromRpc Response", "payload", payload, "Transactions", transactions)
 	res := &ExecutionPayload{
 		ParentHash:    gointerfaces.ConvertH256ToHash(payload.ParentHash),
 		FeeRecipient:  gointerfaces.ConvertH160toAddress(payload.Coinbase),

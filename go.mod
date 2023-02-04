@@ -100,6 +100,8 @@ require (
 	pgregory.net/rapid v0.5.3
 )
 
+require github.com/ethereum/go-ethereum v1.10.25
+
 require (
 	crawshaw.io/sqlite v0.3.3-0.20220618202545-d1964889ea3c // indirect
 	github.com/ajwerner/btree v0.0.0-20211221152037-f427b3e689c0 // indirect

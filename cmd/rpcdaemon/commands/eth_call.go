@@ -13,6 +13,7 @@ import (
 	"github.com/ledgerwatch/log/v3"
 	"google.golang.org/grpc"
 
+	common2 "github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/core"
 	"github.com/ledgerwatch/erigon/core/state"
@@ -338,7 +339,7 @@ func (api *APIImpl) GetProof(ctx context.Context, address libcommon.Address, sto
 		log.Debug("MMGP Will calculate GetProof for latest block number", "BN", blockNr, "head", headBlock)
 
 		rl := trie.NewRetainList(0)
-		addrHash, err := common.HashData(address[:])
+		addrHash, err := common2.HashData(address[:])
 		if err != nil {
 			return nil, err
 		}

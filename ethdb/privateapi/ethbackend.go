@@ -515,7 +515,6 @@ func (s *EthBackendServer) getQuickPayloadStatusIfPossible(blockHash libcommon.H
 	return nil, nil
 }
 
-
 // The expected value to be received by the feeRecipient in wei
 func blockValue(block *types.Block, baseFee *uint256.Int) *uint256.Int {
 	blockValue := uint256.NewInt(0)
@@ -559,7 +558,7 @@ func (s *EthBackendServer) EngineGetPayload(ctx context.Context, req *remote.Eng
 	baseFee.SetFromBig(block.Header().BaseFee)
 
 	encodedTransactions, err := types.MarshalTransactionsBinary(block.Transactions())
-	log.Debug("MMDBG EngineGetPayloadV1 response", "err", err, "encoded", encodedTransactions)
+	log.Debug("MMDBG EngineGetPayload response", "err", err, "encoded", encodedTransactions)
 	
 	if err != nil {
 		return nil, err
@@ -602,7 +601,7 @@ func (s *EthBackendServer) EngineForkChoiceUpdated(ctx context.Context, req *rem
 		SafeBlockHash:      gointerfaces.ConvertH256ToHash(req.ForkchoiceState.SafeBlockHash),
 		FinalizedBlockHash: gointerfaces.ConvertH256ToHash(req.ForkchoiceState.FinalizedBlockHash),
 	}
-        log.Debug("MMDBG ethbackend.go EngineForkChoiceUpdatedV1 got", "reqForkChoice", reqForkchoice)
+        log.Debug("MMDBG ethbackend.go EngineForkChoiceUpdated got", "req", req)
 
 	status, err := s.getQuickPayloadStatusIfPossible(forkChoice.HeadBlockHash, 0, libcommon.Hash{}, &forkChoice, false)
 	if err != nil {
@@ -624,7 +623,7 @@ func (s *EthBackendServer) EngineForkChoiceUpdated(ctx context.Context, req *rem
 			return nil, status.CriticalError
 		}
 	}
-        log.Debug("MMDBG EngineForkChoiceUpdatedV1 Payload", "status", status.Status, "attrs", payloadAttributes)
+        //log.Debug("MMDBG EngineForkChoiceUpdated Payload", "status", status.Status, "attrs", payloadAttributes)
 
 	// No need for payload building
 	payloadAttributes := req.PayloadAttributes
@@ -636,7 +635,7 @@ func (s *EthBackendServer) EngineForkChoiceUpdated(ctx context.Context, req *rem
 		return nil, fmt.Errorf("execution layer not running as a proposer. enable proposer by taking out the --proposer.disable flag on startup")
 	}
 	
-        log.Debug("MMDBG continuing EngineForkChoiceUpdatedV1")
+        log.Debug("MMDBG continuing EngineForkChoiceUpdated")
         
 	tx2, err := s.db.BeginRo(ctx)
 	if err != nil {
@@ -692,11 +691,11 @@ func (s *EthBackendServer) EngineForkChoiceUpdated(ctx context.Context, req *rem
 	s.payloadId++
 
 
+/* FIXME - Merge cleanup
 	var withdrawals []*types.Withdrawal
 	if reqWithdrawals != nil {
 		withdrawals = ConvertWithdrawalsFromRpc(reqWithdrawals)
 	}
-/* FIXME - Merge cleanup
 
 	param := core.BlockBuilderParameters{
 		ParentHash:            forkChoice.HeadBlockHash,

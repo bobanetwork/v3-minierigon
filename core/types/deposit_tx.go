@@ -38,6 +38,7 @@ import (
 	rlp2 "github.com/ethereum/go-ethereum/rlp" // Use this one to avoid a bunch of BS with the ledgerwatch/erigon/rlp version
 	"github.com/ledgerwatch/erigon/rlp"
 	"github.com/ledgerwatch/log/v3"
+	types2 "github.com/ledgerwatch/erigon-lib/types"
 )
 
 // DepositTransaction is the transaction data of regular Ethereum transactions.
@@ -88,8 +89,8 @@ func (tx DepositTransaction) Cost() *uint256.Int {
 	return total
 }
 
-func (tx DepositTransaction) GetAccessList() AccessList {
-	return AccessList{}
+func (tx DepositTransaction) GetAccessList() types2.AccessList {
+	return types2.AccessList{}
 }
 func (tx DepositTransaction) GetData() []byte {
 	return tx.Data
@@ -97,6 +98,15 @@ func (tx DepositTransaction) GetData() []byte {
 
 func (tx DepositTransaction) Protected() bool {
 	return true // FIXME
+}
+
+func (tx DepositTransaction) EncodingSize() int {
+	// FIXME - inefficient
+	var bb bytes.Buffer
+	tx.EncodeRLP(&bb)
+	log.Debug("MMDBG tx.EncodingSize", "tx", tx, "len", bb.Len())
+	
+	return bb.Len()
 }
 
 // copy creates a deep copy of the transaction data and initializes all fields.
