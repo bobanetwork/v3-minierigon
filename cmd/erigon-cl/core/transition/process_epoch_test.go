@@ -29,14 +29,11 @@ func runEpochTransitionConsensusTest(t *testing.T, sszSnappyTest, sszSnappyExpec
 	require.Equal(t, expectedRoot, haveRoot)
 }
 
-/* Broken tests lol.
-
 //go:embed test_data/rewards_penalty_test_expected.ssz_snappy
 var expectedRewardsPenaltyState []byte
 
 //go:embed test_data/rewards_penalty_test_state.ssz_snappy
 var startingRewardsPenaltyState []byte
-*/
 
 //go:embed test_data/registry_updates_test_expected.ssz_snappy
 var expectedRegistryUpdatesState []byte
@@ -56,11 +53,17 @@ var expectedHistoricalRootsState []byte
 //go:embed test_data/historical_roots_state_test.ssz_snappy
 var startingHistoricalRootsState []byte
 
-/*func TestProcessRewardsAndPenalties(t *testing.T) {
+//go:embed test_data/participation_flag_updates_expected_test.ssz_snappy
+var expectedParticipationFlagState []byte
+
+//go:embed test_data/participation_flag_updates_state_test.ssz_snappy
+var startingParticipationFlagState []byte
+
+func TestProcessRewardsAndPenalties(t *testing.T) {
 	runEpochTransitionConsensusTest(t, startingRewardsPenaltyState, expectedRewardsPenaltyState, func(s *transition.StateTransistor) error {
 		return s.ProcessRewardsAndPenalties()
 	})
-}*/
+}
 
 func TestProcessRegistryUpdates(t *testing.T) {
 	runEpochTransitionConsensusTest(t, startingRegistryUpdatesState, expectedRegistryUpdatesState, func(s *transition.StateTransistor) error {
@@ -77,5 +80,12 @@ func TestProcessEffectiveBalances(t *testing.T) {
 func TestProcessHistoricalRoots(t *testing.T) {
 	runEpochTransitionConsensusTest(t, startingHistoricalRootsState, expectedHistoricalRootsState, func(s *transition.StateTransistor) error {
 		return s.ProcessHistoricalRootsUpdate()
+	})
+}
+
+func TestProcessParticipationFlagUpdates(t *testing.T) {
+	runEpochTransitionConsensusTest(t, startingParticipationFlagState, expectedParticipationFlagState, func(s *transition.StateTransistor) error {
+		s.ProcessParticipationFlagUpdates()
+		return nil
 	})
 }
