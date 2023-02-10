@@ -1,13 +1,18 @@
 package transition
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/Giulio2002/bls"
 	"github.com/ledgerwatch/erigon/cl/cltypes"
+	"github.com/ledgerwatch/erigon/cl/fork"
+	"github.com/ledgerwatch/erigon/cl/merkle_tree"
+	"github.com/ledgerwatch/erigon/cl/utils"
+	"github.com/ledgerwatch/erigon/cmd/erigon-cl/core/state/state_encoding"
 )
 
-func (s *StateTransistor) transitionState(block *cltypes.SignedBeaconBlock) error {
+func (s *StateTransistor) TransitionState(block *cltypes.SignedBeaconBlock) error {
 	currentBlock := block.Block
 	s.processSlots(currentBlock.Slot)
 	if !s.noValidate {
@@ -19,7 +24,11 @@ func (s *StateTransistor) transitionState(block *cltypes.SignedBeaconBlock) erro
 			return fmt.Errorf("block not valid")
 		}
 	}
-	// TODO add logic to process block and update state.
+	// Transition block
+	if err := s.processBlock(block); err != nil {
+		return err
+	}
+
 	if !s.noValidate {
 		expectedStateRoot, err := s.state.HashSSZ()
 		if err != nil {
@@ -66,9 +75,15 @@ func (s *StateTransistor) processSlots(slot uint64) error {
 		if err != nil {
 			return fmt.Errorf("unable to process slot transition: %v", err)
 		}
+		// TODO(Someone): Add epoch transition.
+		if (stateSlot+1)%s.beaconConfig.SlotsPerEpoch == 0 {
+			return errors.New("cannot transition epoch: not implemented")
+		}
 		// TODO: add logic to process epoch updates.
 		stateSlot += 1
-		s.state.SetSlot(stateSlot)
+		if err := s.state.SetSlot(stateSlot); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -78,10 +93,36 @@ func (s *StateTransistor) verifyBlockSignature(block *cltypes.SignedBeaconBlock)
 	if err != nil {
 		return false, err
 	}
-	sigRoot, err := block.Block.Body.HashSSZ()
+	domain, err := s.state.GetDomain(s.beaconConfig.DomainBeaconProposer, s.state.Epoch())
 	if err != nil {
 		return false, err
 	}
-	sig := block.Signature
-	return bls.Verify(sig[:], sigRoot[:], proposer.PublicKey[:])
+	sigRoot, err := fork.ComputeSigningRoot(block.Block, domain)
+	if err != nil {
+		return false, err
+	}
+	return bls.Verify(block.Signature[:], sigRoot[:], proposer.PublicKey[:])
+}
+
+func (s *StateTransistor) ProcessHistoricalRootsUpdate() error {
+	nextEpoch := s.state.Epoch() + 1
+	if nextEpoch%(s.beaconConfig.SlotsPerHistoricalRoot/s.beaconConfig.SlotsPerEpoch) == 0 {
+		var (
+			blockRoots = s.state.BlockRoots()
+			stateRoots = s.state.StateRoots()
+		)
+
+		// Compute historical root batch.
+		blockRootsLeaf, err := merkle_tree.ArraysRoot(utils.PreparateRootsForHashing(blockRoots[:]), state_encoding.BlockRootsLength)
+		if err != nil {
+			return err
+		}
+		stateRootsLeaf, err := merkle_tree.ArraysRoot(utils.PreparateRootsForHashing(stateRoots[:]), state_encoding.StateRootsLength)
+		if err != nil {
+			return err
+		}
+
+		s.state.AddHistoricalRoot(utils.Keccak256(blockRootsLeaf[:], stateRootsLeaf[:]))
+	}
+	return nil
 }

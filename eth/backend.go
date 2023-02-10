@@ -589,7 +589,7 @@ func New(stack *node.Node, config *ethconfig.Config, logger log.Logger) (*Ethere
 			return nil, err
 		}
 
-		lc, err := lightclient.NewLightClient(ctx, memdb.New(), genesisCfg, beaconCfg, ethBackendRPC, client, currentBlockNumber, false)
+		lc, err := lightclient.NewLightClient(ctx, memdb.New(), genesisCfg, beaconCfg, ethBackendRPC, nil, client, currentBlockNumber, false)
 		if err != nil {
 			return nil, err
 		}
@@ -1020,7 +1020,7 @@ func (s *Ethereum) setUpBlockReader(ctx context.Context, dirs datadir.Dirs, snCo
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if err = agg.ReopenFiles(); err != nil {
+	if err = agg.ReopenFolder(); err != nil {
 		return nil, nil, nil, err
 	}
 

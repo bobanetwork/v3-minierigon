@@ -1153,7 +1153,7 @@ func allSnapshots(ctx context.Context, db kv.RoDB) (*snapshotsync.RoSnapshots, *
 		if err != nil {
 			panic(err)
 		}
-		err = _aggSingleton.ReopenFiles()
+		err = _aggSingleton.ReopenFolder()
 		if err != nil {
 			panic(err)
 		}
@@ -1323,5 +1323,5 @@ func initConsensusEngine(cc *chain2.Config, datadir string, db kv.RwDB) (engine 
 	} else {
 		consensusConfig = &config.Ethash
 	}
-	return ethconsensusconfig.CreateConsensusEngine(cc, l, consensusConfig, config.Miner.Notify, config.Miner.Noverify, config.HeimdallgRPCAddress, config.HeimdallURL, config.WithoutHeimdall, datadir, snapshots, db.ReadOnly(), db)
+	return ethconsensusconfig.CreateConsensusEngine(cc, l, consensusConfig, config.Miner.Notify, config.Miner.Noverify, HeimdallgRPCAddress, HeimdallURL, config.WithoutHeimdall, datadir, snapshots, db.ReadOnly(), db)
 }
