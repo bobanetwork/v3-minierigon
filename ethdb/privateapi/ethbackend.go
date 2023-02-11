@@ -603,12 +603,13 @@ func (s *EthBackendServer) EngineForkChoiceUpdated(ctx context.Context, req *rem
 		SafeBlockHash:      gointerfaces.ConvertH256ToHash(req.ForkchoiceState.SafeBlockHash),
 		FinalizedBlockHash: gointerfaces.ConvertH256ToHash(req.ForkchoiceState.FinalizedBlockHash),
 	}
-        log.Debug("MMDBG ethbackend.go EngineForkChoiceUpdated got", "req", req)
 
+        log.Debug("MMDBG >>> ethbackend.go EngineForkChoiceUpdated got", "req", req)
 	status, err := s.getQuickPayloadStatusIfPossible(forkChoice.HeadBlockHash, 0, libcommon.Hash{}, &forkChoice, false)
 	if err != nil {
 		return nil, err
 	}
+        log.Debug("MMDBG ethbackend.go getQuickPayloadStatusIfPossible", "err", err, "status", status)
 
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -625,7 +626,7 @@ func (s *EthBackendServer) EngineForkChoiceUpdated(ctx context.Context, req *rem
 			return nil, status.CriticalError
 		}
 	}
-        //log.Debug("MMDBG EngineForkChoiceUpdated Payload", "status", status.Status, "attrs", payloadAttributes)
+        log.Debug("MMDBG EngineForkChoiceUpdated Payload", "status", status.Status, "attrs", req.PayloadAttributes)
 
 	// No need for payload building
 	payloadAttributes := req.PayloadAttributes
@@ -683,50 +684,28 @@ func (s *EthBackendServer) EngineForkChoiceUpdated(ctx context.Context, req *rem
 
 	// Initiate payload building
 	log.Debug("MMDBG ethbackend.go Initiate payload building", "len", len(payloadAttributes.Transactions), "depositTx", payloadAttributes.Transactions)
-        hB := hexutil.Bytes(payloadAttributes.Transactions[0])
-	log.Debug("MMDBG ","hB", hB)
+        if len(payloadAttributes.Transactions) > 0 {
+		hB := hexutil.Bytes(payloadAttributes.Transactions[0])
+		log.Debug("MMDBG ","hB", hB)
+	}
         
 	s.evictOldBuilders()
 
 	// payload IDs start from 1 (0 signifies null)
 	s.payloadId++
 
-
-/* FIXME - Merge cleanup
-	var withdrawals []*types.Withdrawal
-	if reqWithdrawals != nil {
-		withdrawals = ConvertWithdrawalsFromRpc(reqWithdrawals)
-	}
-
-	param := core.BlockBuilderParameters{
-		ParentHash:            forkChoice.HeadBlockHash,
-		Timestamp:             payloadAttributes.Timestamp,
-		PrevRandao:            gointerfaces.ConvertH256ToHash(payloadAttributes.PrevRandao),
-		SuggestedFeeRecipient: gointerfaces.ConvertH160toAddress(payloadAttributes.SuggestedFeeRecipient),
-		Withdrawals:           withdrawals,
-		PayloadId:             s.payloadId,
-	}
-
 	mmChan := make(chan int)
-	builder := builder.NewBlockBuilderMM(
-		s.builderFunc, 
-		&param, 
+	s.builders[s.payloadId]= builder.NewBlockBuilderMM(
+		s.builderFunc,
+		&param,
 		payloadAttributes.Transactions,
 		payloadAttributes.NoTxPool,
 		mmChan)
-
         
-	s.builders[s.payloadId] = builder
-        log.Debug("MMDBG waiting before EngineForkChoiceUpdatedReply", "param", param, "builder", builder)
+	log.Debug("BlockBuilder added", "payload", s.payloadId)
+        log.Debug("MMDBG waiting before EngineForkChoiceUpdatedReply", "param", param, "builder", s.builders[s.payloadId])
 	<-mmChan
 	log.Debug("MMDBG continuing with EngineForkChoiceUpdatedReply")
-*/
-
-/* FIXME - Merge cleanup
-
-	s.builders[s.payloadId] = builder.NewBlockBuilder(s.builderFunc, &param)
-	log.Debug("BlockBuilder added", "payload", s.payloadId)
-*/
 
 	return &remote.EngineForkChoiceUpdatedResponse{
 		PayloadStatus: &remote.EnginePayloadStatus{

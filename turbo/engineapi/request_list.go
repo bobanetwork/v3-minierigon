@@ -8,6 +8,7 @@ import (
 
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
+	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon/core/types"
 	"go.uber.org/atomic"
@@ -97,6 +98,8 @@ func (rl *RequestList) AddForkChoiceRequest(message *ForkChoiceMessage) {
 
 	rl.requestId++
 
+	log.Debug("MMDBG AddForkChoiceRequest", "id", rl.requestId, "msg", message)
+	
 	// purge previous fork choices that are still syncing
 	rl.requests = rl.requests.Select(func(key interface{}, value interface{}) bool {
 		req := value.(*RequestWithStatus)

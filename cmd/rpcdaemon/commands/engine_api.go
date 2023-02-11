@@ -222,11 +222,22 @@ func (e *EngineImpl) forkchoiceUpdated(version uint32, ctx context.Context, fork
 
 	var attributes *remote.EnginePayloadAttributes
 	if payloadAttributes != nil {
+		log.Debug("MMDBG Preparing payloadAttributes", "tLen", len(payloadAttributes.Transactions))
+	
+		// Could move this to erigon-lib/gointerfaces/type_utils.go but there's a problem
+		// importing hexutils into erigon-lib.
+		transactions := make([][]byte, len(payloadAttributes.Transactions))
+		for i, transaction := range payloadAttributes.Transactions {
+			transactions[i] = ([]byte)(transaction)
+			//log.Debug("MMDBG  -> ", "idx", i, "in", transaction, "out", transactions[i])
+		}
 		attributes = &remote.EnginePayloadAttributes{
 			Version:               1,
 			Timestamp:             uint64(payloadAttributes.Timestamp),
 			PrevRandao:            gointerfaces.ConvertHashToH256(payloadAttributes.PrevRandao),
 			SuggestedFeeRecipient: gointerfaces.ConvertAddressToH160(payloadAttributes.SuggestedFeeRecipient),
+			Transactions:          transactions,
+			NoTxPool:              payloadAttributes.NoTxPool,
 		}
 		if version >= 2 && payloadAttributes.Withdrawals != nil {
 			attributes.Version = 2
