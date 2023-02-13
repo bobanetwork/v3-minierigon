@@ -149,61 +149,6 @@ func addPayloadId(json map[string]interface{}, payloadId uint64) {
 	}
 }
 
-
-/* FIXME - Merge cleanup
-func (e *EngineImpl) ForkchoiceUpdatedV1(ctx context.Context, forkChoiceState *ForkChoiceState, payloadAttributes *PayloadAttributesV1) (map[string]interface{}, error) {
-	if e.internalCL {
-		log.Error("EXTERNAL CONSENSUS LAYER IS NOT ENABLED, PLEASE RESTART WITH FLAG --externalcl")
-		return nil, fmt.Errorf("engine api should not be used, restart with --externalcl")
-	}
-	log.Debug("MMDBG >>> ForkchoiceUpdatedV1 Request", "fcs", forkChoiceState, "pa", payloadAttributes)
-	log.Debug("Received ForkchoiceUpdatedV1", "head", forkChoiceState.HeadHash, "safe", forkChoiceState.HeadHash, "finalized", forkChoiceState.FinalizedBlockHash,
-		"build", payloadAttributes != nil)
-
-	var attributes *remote.EnginePayloadAttributes
-	if payloadAttributes != nil {
-		//MMDBG
-		//log.Debug("MMDBG Preparing payloadAttributes", "tLen", len(payloadAttributes.Transactions))
-		transactions := make([][]byte, len(payloadAttributes.Transactions))
-		for i, transaction := range payloadAttributes.Transactions {
-			transactions[i] = ([]byte)(transaction)
-			//log.Debug("MMDBG  -> ", "idx", i, "in", transaction, "out", transactions[i])
-		}
-
-		//prepareParameters = &remote.EnginePayloadAttributes{
-		attributes = &remote.EnginePayloadAttributes{
-			Timestamp:             uint64(payloadAttributes.Timestamp),
-			PrevRandao:            gointerfaces.ConvertHashToH256(payloadAttributes.PrevRandao),
-			SuggestedFeeRecipient: gointerfaces.ConvertAddressToH160(payloadAttributes.SuggestedFeeRecipient),
-			Transactions:          transactions,
-			NoTxPool:              payloadAttributes.NoTxPool,
-		}
-	}
-	//log.Debug("MMDBG prepared", "prepareParameters", prepareParameters)
-
-	reply, err := e.api.EngineForkchoiceUpdatedV1(ctx, &remote.EngineForkChoiceUpdatedRequest{
-		ForkchoiceState: &remote.EngineForkChoiceState{
-			HeadBlockHash:      gointerfaces.ConvertHashToH256(forkChoiceState.HeadHash),
-			SafeBlockHash:      gointerfaces.ConvertHashToH256(forkChoiceState.SafeBlockHash),
-			FinalizedBlockHash: gointerfaces.ConvertHashToH256(forkChoiceState.FinalizedBlockHash),
-		},
-		PayloadAttributes: attributes,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	payloadStatus, err := convertPayloadStatus(ctx, e.db, reply.PayloadStatus)
-	if err != nil {
-		return nil, err
-	}
-
-	json := map[string]interface{}{
-		"payloadStatus": payloadStatus,
-	}
-	addPayloadId(json, reply.PayloadId)
-*/
-
 func (e *EngineImpl) ForkchoiceUpdatedV1(ctx context.Context, forkChoiceState *ForkChoiceState, payloadAttributes *PayloadAttributes) (map[string]interface{}, error) {
 	return e.forkchoiceUpdated(1, ctx, forkChoiceState, payloadAttributes)
 }
@@ -341,63 +286,6 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 
 // NewPayloadV1 processes new payloads (blocks) from the beacon chain without withdrawals.
 
-/* FIXME - Merge cleanup
-// See https://github.com/ethereum/execution-apis/blob/main/src/engine/specification.md#engine_newpayloadv1
-func (e *EngineImpl) NewPayloadV1(ctx context.Context, payload *ExecutionPayloadV1) (map[string]interface{}, error) {
-	if e.internalCL {
-		log.Error("EXTERNAL CONSENSUS LAYER IS NOT ENABLED, PLEASE RESTART WITH FLAG --externalcl")
-		return nil, fmt.Errorf("engine api should not be used, restart with --externalcl")
-	}
-	log.Debug("MMDBG >>> NewPayloadV1 Request", "payload", payload)
-	log.Debug("Received NewPayloadV1", "height", uint64(payload.BlockNumber), "hash", payload.BlockHash)
-
-	var baseFee *uint256.Int
-	if payload.BaseFeePerGas != nil {
-		var overflow bool
-		baseFee, overflow = uint256.FromBig((*big.Int)(payload.BaseFeePerGas))
-		if overflow {
-			log.Warn("NewPayload BaseFeePerGas overflow")
-			return nil, fmt.Errorf("invalid request")
-		}
-	}
-
-	// Convert slice of hexutil.Bytes to a slice of slice of bytes
-	transactions := make([][]byte, len(payload.Transactions))
-	for i, transaction := range payload.Transactions {
-		transactions[i] = transaction
-	}
-	res, err := e.api.EngineNewPayloadV1(ctx, &types2.ExecutionPayload{
-		ParentHash:    gointerfaces.ConvertHashToH256(payload.ParentHash),
-		Coinbase:      gointerfaces.ConvertAddressToH160(payload.FeeRecipient),
-		StateRoot:     gointerfaces.ConvertHashToH256(payload.StateRoot),
-		ReceiptRoot:   gointerfaces.ConvertHashToH256(payload.ReceiptsRoot),
-		LogsBloom:     gointerfaces.ConvertBytesToH2048(payload.LogsBloom),
-		PrevRandao:    gointerfaces.ConvertHashToH256(payload.PrevRandao),
-		BlockNumber:   uint64(payload.BlockNumber),
-		GasLimit:      uint64(payload.GasLimit),
-		GasUsed:       uint64(payload.GasUsed),
-		Timestamp:     uint64(payload.Timestamp),
-		ExtraData:     payload.ExtraData,
-		BaseFeePerGas: gointerfaces.ConvertUint256IntToH256(baseFee),
-		BlockHash:     gointerfaces.ConvertHashToH256(payload.BlockHash),
-		Transactions:  transactions,
-	})
-	if err != nil {
-		log.Warn("NewPayloadV1", "err", err)
-		return nil, err
-	}
-
-	if (uint64(payload.BlockNumber)-1)%20 == 0 {
-		pErr := e.MMProof(ctx, uint64(payload.BlockNumber), payload.BlockHash)
-		if pErr != nil {
-			log.Warn("MMDBG Proof pre-calculation failed", "Block", uint64(payload.BlockNumber), "err", pErr)
-		}
-	}
-	log.Debug("MMDBG <<< NewPayloadV1 Response", "BN", uint64(payload.BlockNumber), "res", res)
-
-	return convertPayloadStatus(ctx, e.db, res)
-*/
-
 // See https://github.com/ethereum/execution-apis/blob/main/src/engine/paris.md#engine_newpayloadv1
 func (e *EngineImpl) NewPayloadV1(ctx context.Context, payload *ExecutionPayload) (map[string]interface{}, error) {
 	return e.newPayload(1, ctx, payload)
@@ -414,6 +302,7 @@ func (e *EngineImpl) newPayload(version uint32, ctx context.Context, payload *Ex
 		log.Error("EXTERNAL CONSENSUS LAYER IS NOT ENABLED, PLEASE RESTART WITH FLAG --externalcl")
 		return nil, fmt.Errorf("engine api should not be used, restart with --externalcl")
 	}
+	log.Debug("MMDBG >>> NewPayload Request", "payload", payload)
 	log.Debug("Received NewPayload", "version", version, "height", uint64(payload.BlockNumber), "hash", payload.BlockHash)
 
 	baseFee, overflow := uint256.FromBig((*big.Int)(payload.BaseFeePerGas))
@@ -454,26 +343,16 @@ func (e *EngineImpl) newPayload(version uint32, ctx context.Context, payload *Ex
 		log.Warn("NewPayload", "err", err)
 		return nil, err
 	}
+	if (uint64(payload.BlockNumber)-1)%20 == 0 {
+		pErr := e.MMProof(ctx, uint64(payload.BlockNumber), payload.BlockHash)
+		if pErr != nil {
+			log.Warn("MMDBG Proof pre-calculation failed", "Block", uint64(payload.BlockNumber), "err", pErr)
+		}
+	}
+	log.Debug("MMDBG <<< NewPayload Response", "BN", uint64(payload.BlockNumber), "res", res)
 	return convertPayloadStatus(ctx, e.db, res)
 }
 
-/* FIXME - Merge cleanup
-func (e *EngineImpl) GetPayloadV1(ctx context.Context, payloadID hexutil.Bytes) (*ExecutionPayloadV1, error) {
-	log.Debug("MMDBG >>> GetPayloadV1 Request", "id", payloadID)
-	if e.internalCL {
-		log.Error("EXTERNAL CONSENSUS LAYER IS NOT ENABLED, PLEASE RESTART WITH FLAG --externalcl")
-		return nil, fmt.Errorf("engine api should not be used, restart with --externalcl")
-	}
-
-	decodedPayloadId := binary.BigEndian.Uint64(payloadID)
-	log.Info("Received GetPayloadV1", "payloadId", decodedPayloadId)
-
-	payload, err := e.api.EngineGetPayloadV1(ctx, decodedPayloadId)
-	if err != nil {
-		return nil, err
-	}
-
-*/
 func convertPayloadFromRpc(payload *types2.ExecutionPayload) *ExecutionPayload {
 	var bloom types.Bloom = gointerfaces.ConvertH2048ToBloom(payload.LogsBloom)
 	baseFee := gointerfaces.ConvertH256ToUint256Int(payload.BaseFeePerGas).ToBig()
@@ -509,6 +388,7 @@ func convertPayloadFromRpc(payload *types2.ExecutionPayload) *ExecutionPayload {
 }
 
 func (e *EngineImpl) GetPayloadV1(ctx context.Context, payloadID hexutil.Bytes) (*ExecutionPayload, error) {
+	log.Debug("MMDBG >>> GetPayloadV1 Request", "id", payloadID)
 	if e.internalCL {
 		log.Error("EXTERNAL CONSENSUS LAYER IS NOT ENABLED, PLEASE RESTART WITH FLAG --externalcl")
 		return nil, fmt.Errorf("engine api should not be used, restart with --externalcl")
