@@ -134,7 +134,7 @@ func (rw *Worker) RunTxTask(txTask *exec22.TxTask) {
 	if txTask.BlockNum == 0 && txTask.TxIndex == -1 {
 		//fmt.Printf("txNum=%d, blockNum=%d, Genesis\n", txTask.TxNum, txTask.BlockNum)
 		// Genesis block
-		_, ibs, err = rw.genesis.ToBlock()
+		_, ibs, err = rw.genesis.ToBlock("")
 		if err != nil {
 			panic(err)
 		}
@@ -323,7 +323,12 @@ func NewWorkersPool(lock sync.Locker, ctx context.Context, background bool, chai
 		reconWorkers[i] = NewWorker(lock, ctx, background, chainDb, rs, blockReader, chainConfig, logger, genesis, resultCh, engine)
 	}
 	applyWorker = NewWorker(lock, ctx, false, chainDb, rs, blockReader, chainConfig, logger, genesis, resultCh, engine)
+	var clearDone bool
 	clear = func() {
+		if clearDone {
+			return
+		}
+		clearDone = true
 		cancel()
 		wg.Wait()
 		for _, w := range reconWorkers {
