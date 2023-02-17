@@ -96,8 +96,8 @@ type FlatDBTrieLoader struct {
 	hc              HashCollector2
 	shc             StorageHashCollector2
 
-	tmpProof []hexutil.Bytes
-	mmProof  *[]hexutil.Bytes
+	// Optionally construct an Account Proof for an account key specified in 'rd'
+	accProofResult *accounts.AccProofResult
 }
 
 // RootHashAggregator - calculates Merkle trie root hash from incoming data stream
@@ -130,8 +130,10 @@ type RootHashAggregator struct {
 	a              accounts.Account
 	leafData       GenStructStepLeafData
 	accData        GenStructStepAccountData
-	proofMatch     RetainDecider
-	cutoff         bool
+
+	// Used to construct an Account proof while calculating the tree root.
+	proofMatch RetainDecider
+	cutoff     bool
 }
 
 type StreamReceiver interface {
@@ -172,69 +174,43 @@ func (l *FlatDBTrieLoader) Reset(rd RetainDeciderWithMarker, hc HashCollector2, 
 	l.trace = trace
 	l.ihSeek, l.accSeek, l.storageSeek, l.kHex, l.kHexS = make([]byte, 0, 128), make([]byte, 0, 128), make([]byte, 0, 128), make([]byte, 0, 128), make([]byte, 0, 128)
 	l.rd = rd
-	l.mmProof = nil
-	l.tmpProof = l.tmpProof[:0]
 	if l.trace {
 		fmt.Printf("----------\n")
 		fmt.Printf("CalcTrieRoot\n")
 	}
+	l.accProofResult = nil
 	return nil
 }
 
-func (l *FlatDBTrieLoader) SetProof(rd RetainDeciderWithMarker, mmAccount *accounts.Account, mmProof *[]hexutil.Bytes) {
-	l.tmpProof = l.tmpProof[:0]
-	l.mmProof = mmProof
-	l.defaultReceiver.proofMatch = rd
-	l.defaultReceiver.hb.SetProof(mmAccount, &l.tmpProof)
+func (l *FlatDBTrieLoader) SetProofReturn(accProofResult *accounts.AccProofResult) {
+	l.accProofResult = accProofResult
+	l.defaultReceiver.proofMatch = l.rd
+	l.defaultReceiver.hb.SetProofReturn(accProofResult)
 }
 
 func (l *FlatDBTrieLoader) SetStreamReceiver(receiver StreamReceiver) {
 	l.receiver = receiver
 }
 
-// CalcTrieRoot algo:
-//
-//		for iterateIHOfAccounts {
-//			if canSkipState
-//	         goto SkipAccounts
-//
-//			for iterateAccounts from prevIH to currentIH {
-//				use(account)
-//				for iterateIHOfStorage within accountWithIncarnation{
-//					if canSkipState
-//						goto SkipStorage
-//
-//					for iterateStorage from prevIHOfStorage to currentIHOfStorage {
-//						use(storage)
-//					}
-//	           SkipStorage:
-//					use(ihStorage)
-//				}
-//			}
-//	   SkipAccounts:
-//			use(AccTrie)
-//		}
-
 // from internal/ethapi/get_proof.go
-type StorageResult struct {
-	Key   string       `json:"key"`
-	Value *hexutil.Big `json:"value"`
-	Proof []string     `json:"proof"`
-}
+//type StorageResult struct {
+//	Key   string       `json:"key"`
+//	Value *hexutil.Big `json:"value"`
+//	Proof []string     `json:"proof"`
+//}
 type AccountResult struct {
 	Code         hexutil.Bytes   `json:"code"` // seemingly not needed on client, but for method above
 	AccountProof []hexutil.Bytes `json:"accountProof"`
 
-	Address      libcommon.Address `json:"address"`
-	Balance      *hexutil.Big      `json:"balance"`
-	CodeHash     libcommon.Hash    `json:"codeHash"`
-	Nonce        hexutil.Uint64    `json:"nonce"`
-	StorageHash  libcommon.Hash    `json:"storageHash"`
-	Root         libcommon.Hash    `json:"root"` // possibly not needed
-	StorageProof []StorageResult   `json:"storageProof"`
+	Address      libcommon.Address          `json:"address"`
+	Balance      *hexutil.Big               `json:"balance"`
+	CodeHash     libcommon.Hash             `json:"codeHash"`
+	Nonce        hexutil.Uint64             `json:"nonce"`
+	StorageHash  libcommon.Hash             `json:"storageHash"`
+	Root         libcommon.Hash             `json:"root"` // possibly not needed
+	StorageProof []accounts.StorProofResult `json:"storageProof"`
 }
-
-func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, acc accounts.Account, sp *[]StorageResult) error {
+func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, acc accounts.Account, sp *[]accounts.StorProofResult) error {
 	var T *Trie = New(EmptyRoot)
 	var accWithInc [40]byte
 
@@ -305,10 +281,30 @@ func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, a
 
 	return err
 }
+// CalcTrieRoot algo:
+//
+//		for iterateIHOfAccounts {
+//			if canSkipState
+//	         goto SkipAccounts
+//
+//			for iterateAccounts from prevIH to currentIH {
+//				use(account)
+//				for iterateIHOfStorage within accountWithIncarnation{
+//					if canSkipState
+//						goto SkipStorage
+//
+//					for iterateStorage from prevIHOfStorage to currentIHOfStorage {
+//						use(storage)
+//					}
+//	           SkipStorage:
+//					use(ihStorage)
+//				}
+//			}
+//	   SkipAccounts:
+//			use(AccTrie)
+//		}
 func (l *FlatDBTrieLoader) CalcTrieRoot(tx kv.Tx, prefix []byte, quit <-chan struct{}) (libcommon.Hash, error) {
-	if l.trace {
-		log.Debug("MMGP-1 CalcTrieRoot", "prefix", prefix)
-	}
+
 	accC, err := tx.Cursor(kv.HashedAccounts)
 	if err != nil {
 		return EmptyRoot, err
@@ -331,10 +327,6 @@ func (l *FlatDBTrieLoader) CalcTrieRoot(tx kv.Tx, prefix []byte, quit <-chan str
 		return !retain, nextCreated
 	}
 	accTrie := AccTrie(canUse, l.hc, trieAccC, quit)
-
-	if l.trace {
-		log.Debug("MMGP-1 Creating StorageTrie", "shc", l.shc)
-	}
 	storageTrie := StorageTrie(canUse, l.shc, trieStorageC, quit)
 
 	ss, err := tx.CursorDupSort(kv.HashedStorage)
@@ -345,9 +337,6 @@ func (l *FlatDBTrieLoader) CalcTrieRoot(tx kv.Tx, prefix []byte, quit <-chan str
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	for ihK, ihV, hasTree, err := accTrie.AtPrefix(prefix); ; ihK, ihV, hasTree, err = accTrie.Next() { // no loop termination is at he end of loop
-		if l.trace {
-			log.Debug("MMGP-1 accTrie", "ihK", hexutil.Bytes(ihK), "ihV", hexutil.Bytes(ihV), "hasTree", hasTree, "err", err)
-		}
 		if err != nil {
 			return EmptyRoot, err
 		}
@@ -356,10 +345,6 @@ func (l *FlatDBTrieLoader) CalcTrieRoot(tx kv.Tx, prefix []byte, quit <-chan str
 		}
 
 		for k, kHex, v, err1 := accs.Seek(accTrie.FirstNotCoveredPrefix()); k != nil; k, kHex, v, err1 = accs.Next() {
-			if l.trace {
-				log.Debug("MMGP-1 accTrie Seek", "k", hexutil.Bytes(k), "kHex", hexutil.Bytes(kHex), "v", hexutil.Bytes(v))
-			}
-
 			if err1 != nil {
 				return EmptyRoot, err1
 			}
@@ -368,12 +353,6 @@ func (l *FlatDBTrieLoader) CalcTrieRoot(tx kv.Tx, prefix []byte, quit <-chan str
 			}
 			if err = l.accountValue.DecodeForStorage(v); err != nil {
 				return EmptyRoot, fmt.Errorf("fail DecodeForStorage: %w", err)
-			}
-			if l.trace {
-				log.Debug("MMGP-1 accTrie Receive ASI", "kHex", hexutil.Bytes(kHex), "val", l.accountValue)
-			}
-			if l.trace {
-				log.Debug("MMGP-1 Receive1", "ASI", AccountStreamItem, "kh", hexutil.Bytes(kHex))
 			}
 			if err = l.receiver.Receive(AccountStreamItem, kHex, nil, &l.accountValue, nil, nil, false, 0); err != nil {
 				return EmptyRoot, err
@@ -384,37 +363,22 @@ func (l *FlatDBTrieLoader) CalcTrieRoot(tx kv.Tx, prefix []byte, quit <-chan str
 			copy(l.accAddrHashWithInc[:], k)
 			binary.BigEndian.PutUint64(l.accAddrHashWithInc[32:], l.accountValue.Incarnation)
 			accWithInc := l.accAddrHashWithInc[:]
-			if l.trace {
-				log.Debug("MMGP-1 before storageTrieSeek", "aWI", hexutil.Bytes(accWithInc))
-			}
 			for ihKS, ihVS, hasTreeS, err2 := storageTrie.SeekToAccount(accWithInc); ; ihKS, ihVS, hasTreeS, err2 = storageTrie.Next() {
-				if l.trace {
-					log.Debug("MMGP-1 in StorageTrieSeek", "aWI", hexutil.Bytes(accWithInc), "ihKS", hexutil.Bytes(ihKS), "ihVS", hexutil.Bytes(ihVS))
-				}
 				if err2 != nil {
 					return EmptyRoot, err2
 				}
 
 				if storageTrie.skipState {
-					if l.trace {
-						log.Debug("MMGP-1 storageTrie.skipState is set")
-					}
 					goto SkipStorage
 				}
 
 				for vS, err3 := ss.SeekBothRange(accWithInc, storageTrie.FirstNotCoveredPrefix()); vS != nil; _, vS, err3 = ss.NextDup() {
-					if l.trace {
-						log.Debug("MMGP-1 *** SeekBothRange", "vs", hexutil.Bytes(vS), "err3", err3)
-					}
 					if err3 != nil {
 						return EmptyRoot, err3
 					}
 					hexutil.DecompressNibbles(vS[:32], &l.kHexS)
 					if keyIsBefore(ihKS, l.kHexS) { // read until next AccTrie
 						break
-					}
-					if l.trace {
-						log.Debug("MMGP-1 Receive2 put StorageStreamItem", "aWI", hexutil.Bytes(accWithInc), "k", l.kHexS)
 					}
 					if err = l.receiver.Receive(StorageStreamItem, accWithInc, l.kHexS, nil, vS[32:], nil, false, 0); err != nil {
 						return EmptyRoot, err
@@ -423,23 +387,13 @@ func (l *FlatDBTrieLoader) CalcTrieRoot(tx kv.Tx, prefix []byte, quit <-chan str
 
 			SkipStorage:
 				if ihKS == nil { // Loop termination
-					if l.trace {
-						log.Debug("MMGP-1 SkipStorage ihKS==nil")
-					}
 					break
-				}
-
-				if l.trace {
-					log.Debug("MMGP-1 Receive3", "aWI", hexutil.Bytes(accWithInc), "hasTreeS", hasTreeS)
 				}
 
 				if err = l.receiver.Receive(SHashStreamItem, accWithInc, ihKS, nil, nil, ihVS, hasTreeS, 0); err != nil {
 					return EmptyRoot, err
 				}
 				if len(ihKS) == 0 { // means we just sent acc.storageRoot
-					if l.trace {
-						log.Debug("MMGP-1 SkipStorage len(ihKS)==0, breaking")
-					}
 					break
 				}
 			}
@@ -455,36 +409,14 @@ func (l *FlatDBTrieLoader) CalcTrieRoot(tx kv.Tx, prefix []byte, quit <-chan str
 		if ihK == nil { // Loop termination
 			break
 		}
-		if l.trace {
-			log.Debug("MMGP-1 Receive4", "ihK", hexutil.Bytes(ihK))
-		}
+
 		if err = l.receiver.Receive(AHashStreamItem, ihK, nil, nil, nil, ihV, hasTree, 0); err != nil {
 			return EmptyRoot, err
 		}
-		if l.trace {
-			if len(l.defaultReceiver.hb.nodeStack) > 0 {
-				log.Debug("MMGP-1 loopBottom", "ns0", l.defaultReceiver.hb.nodeStack[0], "nsLen", len(l.defaultReceiver.hb.nodeStack))
-			} else {
-				log.Debug("MMGP-1 loopBottom, empty nodeStack")
-			}
-		}
-	}
-
-	if l.trace {
-		log.Debug("MMGP-1 Receive5 Cutoff Stream", "prefix", hexutil.Bytes(prefix))
 	}
 
 	if err := l.receiver.Receive(CutoffStreamItem, nil, nil, nil, nil, nil, false, len(prefix)); err != nil {
 		return EmptyRoot, err
-	}
-	if l.mmProof != nil {
-		// Reverse the order so that the proof starts from the root node
-		for i := len(l.tmpProof); i > 0; i-- {
-			*l.mmProof = append(*l.mmProof, l.tmpProof[i-1])
-		}
-	}
-	if l.trace {
-		log.Debug("MMGP-1 CalcTrieRoot", "root", l.receiver.Root(), "reversed", l.mmProof)
 	}
 	return l.receiver.Root(), nil
 }
@@ -546,10 +478,6 @@ func (r *RootHashAggregator) Receive(itemType StreamItem,
 	//	//}
 	//}
 
-	if r.trace {
-		log.Debug("MMGP-2  RHA Receive entry", "type", itemType, "ak", hexutil.Bytes(accountKey), "sk", hexutil.Bytes(storageKey), "val", accountValue, "hash", hexutil.Bytes(hash), "hasTree", hasTree)
-	}
-
 	switch itemType {
 	case StorageStreamItem:
 		if len(r.currAccK) == 0 {
@@ -561,15 +489,8 @@ func (r *RootHashAggregator) Receive(itemType StreamItem,
 				return err
 			}
 		}
-		if r.trace {
-			log.Debug("MMGP-2  StorageStreamItem saveValueStorage", "ak", hexutil.Bytes(accountKey), "sv", hexutil.Bytes(storageValue), "hash", hexutil.Bytes(hash))
-		}
-
 		r.saveValueStorage(false, hasTree, storageValue, hash)
 	case SHashStreamItem:
-		if r.trace {
-			log.Debug("MMGP-2  SHashStreamItem", "ak", hexutil.Bytes(accountKey), "sk", hexutil.Bytes(storageKey), "sv", hexutil.Bytes(storageValue), "hash", hexutil.Bytes(hash))
-		}
 		if len(storageKey) == 0 { // this is ready-to-use storage root - no reason to call GenStructStep, also GenStructStep doesn't support empty prefixes
 			r.hb.hashStack = append(append(r.hb.hashStack, byte(80+length2.Hash)), hash...)
 			r.hb.nodeStack = append(r.hb.nodeStack, nil)
@@ -587,9 +508,6 @@ func (r *RootHashAggregator) Receive(itemType StreamItem,
 		}
 		r.saveValueStorage(true, hasTree, storageValue, hash)
 	case AccountStreamItem:
-		//if r.trace {
-		//	log.Debug("MMGP-2  setFoo=false AccountStreamItem", "ak", hexutil.Bytes(accountKey), "sk", hexutil.Bytes(storageKey))
-		//}
 		r.advanceKeysAccount(accountKey, true /* terminator */)
 		if r.curr.Len() > 0 && !r.wasIH {
 			r.cutoffKeysStorage(0)
@@ -618,20 +536,6 @@ func (r *RootHashAggregator) Receive(itemType StreamItem,
 		if err := r.saveValueAccount(false, hasTree, accountValue, hash); err != nil {
 			return err
 		}
-
-		/*
-			if r.proofMatch != nil && r.proofMatch.Retain(accountKey) {
-				if r.trace {
-					log.Debug("MMGP-2  RHA ProofMatch", "accountKey", hexutil.Bytes(accountKey), "val", accountValue)
-				}
-				r.proofAccount.Initialised = accountValue.Initialised
-				r.proofAccount.Nonce = accountValue.Nonce
-				r.proofAccount.Balance = accountValue.Balance
-				r.proofAccount.Root = accountValue.Root
-				r.proofAccount.CodeHash = accountValue.CodeHash
-				r.proofAccount.Incarnation = accountValue.Incarnation
-			}
-		*/
 	case AHashStreamItem:
 		r.advanceKeysAccount(accountKey, false /* terminator */)
 		if r.curr.Len() > 0 && !r.wasIH {
@@ -664,13 +568,8 @@ func (r *RootHashAggregator) Receive(itemType StreamItem,
 	case CutoffStreamItem:
 		if r.trace {
 			fmt.Printf("storage cuttoff %d\n", cutoff)
-			log.Debug("MMGP-2  RHA CutoffStreamItem", "cutoff", cutoff)
 		}
-
 		r.cutoffKeysAccount(cutoff)
-		if r.trace {
-			log.Debug("MMGP-2  RHA CutoffStream 2")
-		}
 		if r.curr.Len() > 0 && !r.wasIH {
 			r.cutoffKeysStorage(0)
 			if r.currStorage.Len() > 0 {
@@ -689,9 +588,8 @@ func (r *RootHashAggregator) Receive(itemType StreamItem,
 				r.accData.FieldSet |= AccountFieldStorageOnly
 			}
 		}
-		if r.trace {
-			log.Debug("MMGP-2  RHA CutoffStream 3, setting flag")
-		}
+
+		// Used for optional GetProof calculation to trigger inclusion of the top-level node
 		r.cutoff = true
 
 		if r.curr.Len() > 0 {
@@ -699,18 +597,12 @@ func (r *RootHashAggregator) Receive(itemType StreamItem,
 				return err
 			}
 		}
-		if r.trace {
-			log.Debug("MMGP-2  RHA CutoffStream 4")
-		}
 		if r.curr.Len() > 0 {
 			if len(r.groups) > cutoff {
 				r.groups = r.groups[:cutoff]
 				r.hasTree = r.hasTree[:cutoff]
 				r.hasHash = r.hasHash[:cutoff]
 			}
-		}
-		if r.trace {
-			log.Debug("MMGP-2  RHA CutoffStream 5")
 		}
 		if r.hb.hasRoot() {
 			r.root = r.hb.rootHash()
@@ -776,9 +668,6 @@ func (r *RootHashAggregator) cutoffKeysStorage(cutoff int) {
 func (r *RootHashAggregator) genStructStorage() error {
 	var err error
 	var data GenStructStepData
-	if r.trace {
-		log.Debug("MMGP-3   RHA entering genStructStorage", "wasIH", r.wasIHStorage, "r.vS", r.valueStorage)
-	}
 	if r.wasIHStorage {
 		r.hashData.Hash = r.hashStorage
 		r.hashData.HasTree = r.hadTreeStorage
@@ -787,32 +676,16 @@ func (r *RootHashAggregator) genStructStorage() error {
 		r.leafData.Value = rlphacks.RlpSerializableBytes(r.valueStorage)
 		data = &r.leafData
 	}
-	r2func := func(_ []byte) bool {
-		return false
-	}
-
-	if r.proofMatch != nil {
-		r2func = r.proofMatch.Retain
-	}
-
 	r.groupsStorage, r.hasTreeStorage, r.hasHashStorage, err = GenStructStep(r.RetainNothing, r.currStorage.Bytes(), r.succStorage.Bytes(), r.hb, func(keyHex []byte, hasState, hasTree, hasHash uint16, hashes, rootHash []byte) error {
 		if r.shc == nil {
 			return nil
 		}
-		if r.trace {
-			log.Debug("MMGP-3   RHA before r.shc", "keyHex", hexutil.Bytes(keyHex), "ak", hexutil.Bytes(r.currAccK))
-		}
 		return r.shc(r.currAccK, keyHex, hasState, hasTree, hasHash, hashes, rootHash)
 	}, data, r.groupsStorage, r.hasTreeStorage, r.hasHashStorage,
 		r.trace,
-		r2func,
-		r.cutoff,
 	)
 	if err != nil {
 		return err
-	}
-	if r.trace {
-		log.Debug("MMGP-3   RHA leaving genStructStorage")
 	}
 	return nil
 }
@@ -871,29 +744,20 @@ func (r *RootHashAggregator) genStructAccount() error {
 	r.currStorage.Reset()
 	r.succStorage.Reset()
 	var err error
-	if r.trace {
-		log.Debug("MMGP-3   RHA genStructAccount calling GenStructStep", "curr", hexutil.Bytes(r.curr.Bytes()), "succ", hexutil.Bytes(r.succ.Bytes()))
-	}
 
-	r2func := func(_ []byte) bool {
-		return false
-	}
-
+	var wantProof func(_ []byte) bool
 	if r.proofMatch != nil {
-		r2func = r.proofMatch.Retain
+		wantProof = r.proofMatch.Retain
 	}
-	if r.groups, r.hasTree, r.hasHash, err = GenStructStep(r.RetainNothing, r.curr.Bytes(), r.succ.Bytes(), r.hb, func(keyHex []byte, hasState, hasTree, hasHash uint16, hashes, rootHash []byte) error {
+	if r.groups, r.hasTree, r.hasHash, err = GenStructStepEx(r.RetainNothing, r.curr.Bytes(), r.succ.Bytes(), r.hb, func(keyHex []byte, hasState, hasTree, hasHash uint16, hashes, rootHash []byte) error {
 		if r.hc == nil {
 			return nil
-		}
-		if r.trace {
-			log.Debug("MMGP-3   RHA genStructAccount before HC", "kH", hexutil.Bytes(keyHex), "hashes", hexutil.Bytes(hashes), "RH", hexutil.Bytes(rootHash))
 		}
 		return r.hc(keyHex, hasState, hasTree, hasHash, hashes, rootHash)
 	}, data, r.groups, r.hasTree, r.hasHash,
 		//false,
 		r.trace,
-		r2func,
+		wantProof,
 		r.cutoff,
 	); err != nil {
 		return err
@@ -903,9 +767,6 @@ func (r *RootHashAggregator) genStructAccount() error {
 }
 
 func (r *RootHashAggregator) saveValueAccount(isIH, hasTree bool, v *accounts.Account, h []byte) error {
-	if r.trace {
-		log.Debug("MMGP-3   RHA saveValueAccount", "isIH", isIH, "hasTree", hasTree, "v", v, "h", hexutil.Bytes(h))
-	}
 	r.wasIH = isIH
 	if isIH {
 		r.hashAccount.SetBytes(h)

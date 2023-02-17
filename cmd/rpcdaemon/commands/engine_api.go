@@ -168,7 +168,7 @@ func (e *EngineImpl) forkchoiceUpdated(version uint32, ctx context.Context, fork
 	var attributes *remote.EnginePayloadAttributes
 	if payloadAttributes != nil {
 		log.Debug("MMDBG Preparing payloadAttributes", "tLen", len(payloadAttributes.Transactions))
-	
+
 		// Could move this to erigon-lib/gointerfaces/type_utils.go but there's a problem
 		// importing hexutils into erigon-lib.
 		transactions := make([][]byte, len(payloadAttributes.Transactions))
@@ -244,21 +244,25 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 		return err
 	}
 
-	acc2 := accounts.Account{}
-	var aProof []hexutil.Bytes
-	loader.SetProof(pRL, &acc2, &aProof)
+	var accProof accounts.AccProofResult
+	accProof.Address = pAddr
+
+	//acc2 := accounts.Account{}
+	//var aProof []hexutil.Bytes
+	//loader.SetProof(pRL, &acc2, &aProof)
+	loader.SetProofReturn(&accProof)
 
 	var quit <-chan struct{}
 	hash, err := loader.CalcTrieRoot(tx, []byte{}, quit)
 	if err != nil {
 		return err
 	}
-	log.Debug("MMGP engine_api ProofResult", "blockNum", BN-1, "blockHash", BH, "stateroot", hash, "acc", acc2, "proof", aProof)
+	log.Debug("MMGP engine_api ProofResult", "blockNum", BN-1, "blockHash", BH, "stateroot", hash, "result", accProof)
 	log.Debug("MMDBG proof db", "db", e._proofDB)
 	proofDB := e._proofDB
 
 	blockKey := []byte(fmt.Sprint(BN - 1))
-
+/*
 	dbEntry := &trie.AccountResult{
 		Balance:      (*hexutil.Big)(acc2.Balance.ToBig()),
 		CodeHash:     acc2.CodeHash,
@@ -269,9 +273,9 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 		Root:         hash,
 		//StorageProof: [],
 	}
-
+*/
 	if err := proofDB.Update(context.Background(), func(tx kv.RwTx) (err error) {
-		dbVal, err := rlp.EncodeToBytes(dbEntry)
+		dbVal, err := rlp.EncodeToBytes(accProof)
 		if err != nil {
 			return err
 		}
@@ -279,7 +283,7 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 	}); err != nil {
 		return err
 	}
-	log.Debug("MMGP engine_api wrote to proofDB", "BN", BN-1, "dbEntry", dbEntry)
+	log.Debug("MMGP engine_api wrote to proofDB", "BN", BN-1, "dbEntry", accProof)
 
 	return nil
 }
