@@ -21,10 +21,10 @@ import (
 	"github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/ethdb/privateapi"
+	"github.com/ledgerwatch/erigon/rlp"
 	"github.com/ledgerwatch/erigon/rpc"
 	"github.com/ledgerwatch/erigon/turbo/rpchelper"
 	"github.com/ledgerwatch/erigon/turbo/trie"
-	"github.com/ledgerwatch/erigon/rlp"
 )
 
 // ExecutionPayload represents an execution payload (aka block)
@@ -240,16 +240,12 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 
 	pRL.AddKey(addrHash[:])
 	loader := trie.NewFlatDBTrieLoader("mmProof")
-	if err := loader.Reset(pRL, nil, nil /* trace */, false); err != nil {
+	if err := loader.Reset(pRL, nil, nil, true); err != nil {
 		return err
 	}
 
 	var accProof accounts.AccProofResult
 	accProof.Address = pAddr
-
-	//acc2 := accounts.Account{}
-	//var aProof []hexutil.Bytes
-	//loader.SetProof(pRL, &acc2, &aProof)
 	loader.SetProofReturn(&accProof)
 
 	var quit <-chan struct{}
@@ -258,22 +254,11 @@ func (e *EngineImpl) MMProof(ctx context.Context, BN uint64, BH common.Hash) err
 		return err
 	}
 	log.Debug("MMGP engine_api ProofResult", "blockNum", BN-1, "blockHash", BH, "stateroot", hash, "result", accProof)
-	log.Debug("MMDBG proof db", "db", e._proofDB)
+	log.Debug("MMGP proof db", "db", e._proofDB)
 	proofDB := e._proofDB
 
 	blockKey := []byte(fmt.Sprint(BN - 1))
-/*
-	dbEntry := &trie.AccountResult{
-		Balance:      (*hexutil.Big)(acc2.Balance.ToBig()),
-		CodeHash:     acc2.CodeHash,
-		Nonce:        hexutil.Uint64(acc2.Nonce),
-		Address:      pAddr,
-		AccountProof: aProof,
-		StorageHash:  acc2.Root,
-		Root:         hash,
-		//StorageProof: [],
-	}
-*/
+
 	if err := proofDB.Update(context.Background(), func(tx kv.RwTx) (err error) {
 		dbVal, err := rlp.EncodeToBytes(accProof)
 		if err != nil {

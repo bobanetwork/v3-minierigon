@@ -82,7 +82,6 @@ func (hb *HashBuilder) SetProofReturn(accProofResult *accounts.AccProofResult) {
 
 // Set the collectNode flag. It will be cleared after an item is added to the proof stack.
 func (hb *HashBuilder) collectNextNode() error {
-	log.Debug("MMDBG collectNextNode setting flag", "old", hb.collectNode)
 	if hb.accProofResult != nil && hb.accProofResult.AccountProof != nil {
 		hb.collectNode = true
 		return nil
@@ -290,6 +289,21 @@ func (hb *HashBuilder) accountLeaf(length int, keyHex []byte, balance *uint256.I
 	hb.nodeStack[len(hb.nodeStack)-1] = s
 	if hb.trace {
 		fmt.Printf("Stack depth: %d\n", len(hb.nodeStack))
+	}
+	// For an external eth_getProof these fields have already been populated in eth_call.go. The following code is
+	// to support the pre-computed proofs from engine_api.go.
+	if hb.accProofResult != nil {
+		//hb.accProofResult.Initialised = a.Initialised
+		hb.accProofResult.Nonce = hexutil.Uint64(a.Nonce)
+		hb.accProofResult.Balance = (*hexutil.Big)(a.Balance.ToBig())
+		if a.storage != nil {
+			hb.accProofResult.StorageHash = libcommon.BytesToHash(a.storage.reference())
+		}
+		hb.accProofResult.CodeHash = a.CodeHash
+		//hb.accProofResult.Incarnation = a.Incarnation
+		if hb.trace {
+			log.Debug("MMGP HB populated proofAccount", "accProofResult", hb.accProofResult)
+		}
 	}
 	return nil
 }

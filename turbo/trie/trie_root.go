@@ -192,12 +192,6 @@ func (l *FlatDBTrieLoader) SetStreamReceiver(receiver StreamReceiver) {
 	l.receiver = receiver
 }
 
-// from internal/ethapi/get_proof.go
-//type StorageResult struct {
-//	Key   string       `json:"key"`
-//	Value *hexutil.Big `json:"value"`
-//	Proof []string     `json:"proof"`
-//}
 type AccountResult struct {
 	Code         hexutil.Bytes   `json:"code"` // seemingly not needed on client, but for method above
 	AccountProof []hexutil.Bytes `json:"accountProof"`
@@ -210,11 +204,12 @@ type AccountResult struct {
 	Root         libcommon.Hash             `json:"root"` // possibly not needed
 	StorageProof []accounts.StorProofResult `json:"storageProof"`
 }
-func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, acc accounts.Account, sp *[]accounts.StorProofResult) error {
+
+func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, inc uint64, expectedRoot libcommon.Hash, sp *[]accounts.StorProofResult) error {
 	var T *Trie = New(EmptyRoot)
 	var accWithInc [40]byte
 
-	log.Debug("MMGP-1 CalcStorageProof start", "sp", sp, "addrHash", addrHash, "acc", acc)
+	log.Debug("MMGP-1 CalcStorageProof start", "sp", sp, "addrHash", addrHash, "inc", inc, "expectedRoot", expectedRoot)
 	trieStorageC, err := tx.CursorDupSort(kv.TrieOfStorage)
 	defer trieStorageC.Close()
 
@@ -227,7 +222,7 @@ func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, a
 	ss, err := tx.CursorDupSort(kv.HashedStorage)
 
 	copy(accWithInc[:], addrHash.Bytes())
-	binary.BigEndian.PutUint64(accWithInc[32:], acc.Incarnation)
+	binary.BigEndian.PutUint64(accWithInc[32:], inc)
 	log.Debug("MMGP-1 accWithInc", "aWI", hexutil.Bytes(accWithInc[:]))
 
 	cnt := 0
@@ -245,8 +240,8 @@ func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, a
 			break
 		}
 	}
-	log.Debug("MMGP-1 StorageTrie", "items", cnt, "root", hexutil.Bytes(T.Root()), "expected", acc.Root)
-	if libcommon.BytesToHash(T.Root()) != acc.Root {
+	log.Debug("MMGP-1 StorageTrie", "items", cnt, "root", hexutil.Bytes(T.Root()), "expected", expectedRoot)
+	if libcommon.BytesToHash(T.Root()) != expectedRoot {
 		return errors.New("StorageTrie root mismatch")
 	}
 
@@ -281,6 +276,7 @@ func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, a
 
 	return err
 }
+
 // CalcTrieRoot algo:
 //
 //		for iterateIHOfAccounts {
