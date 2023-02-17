@@ -323,8 +323,8 @@ func (api *APIImpl) GetProof(ctx context.Context, address libcommon.Address, sto
 
 	log.Debug("MMGP GetProof", "addr", address, "stor", storageKeys, "blockNrOrHash", blockNrOrHash, "mapped_BN", blockNr)
 	log.Debug("MMGP proofDB", "db", api._proofDB)
-	var proofDB kv.RoDB
-	proofDB = api._proofDB
+
+	proofDB := api._proofDB
 	var accProof accounts.AccProofResult
 	accProof.Address = address
 
@@ -376,11 +376,9 @@ func (api *APIImpl) GetProof(ctx context.Context, address libcommon.Address, sto
 		}
 		log.Debug("MMGP GetProof CalcTrieRoot", "err", err, "trRoot", trRoot, "result", accProof)
 
-		var sp []accounts.StorProofResult
-
-		sp = make([]accounts.StorProofResult, len(storageKeys))
+		sp := make([]accounts.StorProofResult, len(storageKeys))
 		if len(storageKeys) > 0 {
-			for idx, _ := range storageKeys {
+			for idx := range storageKeys {
 				sp[idx].Key = storageKeys[idx]
 			}
 

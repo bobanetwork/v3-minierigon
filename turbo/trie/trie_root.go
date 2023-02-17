@@ -245,7 +245,7 @@ func (l *FlatDBTrieLoader) CalcStorageProof(tx kv.Tx, addrHash libcommon.Hash, i
 		return errors.New("StorageTrie root mismatch")
 	}
 
-	for idx, _ := range *sp {
+	for idx := range *sp {
 		sK := libcommon.HexToHash((*sp)[idx].Key)
 		sHashed, err := common.HashData(sK[:])
 		if err != nil {

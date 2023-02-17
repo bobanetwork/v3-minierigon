@@ -401,13 +401,11 @@ func prune(t *testing.T, db kv.RwDB, pruneTo uint64) {
 
 func TestGetProof(t *testing.T) {
 	m, _, _ := rpcdaemontest.CreateTestSentry(t)
-	db := rpcdaemontest.CreateTestKV(t)
+	agg := m.HistoryV3Components()
+	br := snapshotsync.NewBlockReaderWithSnapshots(m.BlockSnapshots)
 	stateCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	ctx, conn := rpcdaemontest.CreateTestGrpcConn(t, stages.Mock(t))
-	mining := txpool.NewMiningClient(conn)
-	ff := rpchelper.New(ctx, nil, nil, mining, func() {})
+	api := NewEthAPI(NewBaseApi(nil, stateCache, br, agg, false, rpccfg.DefaultEvmCallTimeout, m.Engine), m.DB, nil, nil, nil, 5000000, 100_000)
 
-	api := NewEthAPI(NewBaseApi(ff, stateCache, snapshotsync.NewBlockReader(), nil, false, rpccfg.DefaultEvmCallTimeout, m.Engine), db, nil, nil, nil, 5000000, 100_000)
 	var addr = libcommon.HexToAddress("0x71562b71999873db5b286df957af199ec94617f7")
 	ethCallBlockNumber := rpc.LatestBlockNumber
 

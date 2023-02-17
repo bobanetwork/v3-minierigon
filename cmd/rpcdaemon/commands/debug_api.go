@@ -20,8 +20,6 @@ import (
 	"github.com/ledgerwatch/erigon/rpc"
 	"github.com/ledgerwatch/erigon/turbo/adapter/ethapi"
 	"github.com/ledgerwatch/erigon/turbo/transactions"
-	//"github.com/ledgerwatch/log/v3"
-	"github.com/ledgerwatch/erigon/turbo/trie"
 )
 
 // AccountRangeMaxResults is the maximum number of results to be returned per call
@@ -37,7 +35,7 @@ type PrivateDebugAPI interface {
 	GetModifiedAccountsByNumber(ctx context.Context, startNum rpc.BlockNumber, endNum *rpc.BlockNumber) ([]common.Address, error)
 	GetModifiedAccountsByHash(_ context.Context, startHash common.Hash, endHash *common.Hash) ([]common.Address, error)
 	TraceCall(ctx context.Context, args ethapi.CallArgs, blockNrOrHash rpc.BlockNumberOrHash, config *tracers.TraceConfig, stream *jsoniter.Stream) error
-	AccountAt(ctx context.Context, blockHash common.Hash, txIndex uint64, account common.Address) (*trie.AccountResult, error)
+	AccountAt(ctx context.Context, blockHash common.Hash, txIndex uint64, account common.Address) (*AccountResult, error)
 }
 
 // PrivateDebugAPIImpl is implementation of the PrivateDebugAPI interface based on remote Db access
@@ -279,7 +277,7 @@ func (api *PrivateDebugAPIImpl) GetModifiedAccountsByHash(ctx context.Context, s
 	return changeset.GetModifiedAccounts(tx, startNum, endNum)
 }
 
-func (api *PrivateDebugAPIImpl) AccountAt(ctx context.Context, blockHash common.Hash, txIndex uint64, address common.Address) (*trie.AccountResult, error) {
+func (api *PrivateDebugAPIImpl) AccountAt(ctx context.Context, blockHash common.Hash, txIndex uint64, address common.Address) (*AccountResult, error) {
 	tx, err := api.db.BeginRo(ctx)
 	if err != nil {
 		return nil, err
@@ -307,14 +305,14 @@ func (api *PrivateDebugAPIImpl) AccountAt(ctx context.Context, blockHash common.
 			return nil, err
 		}
 		if !ok || len(v) == 0 {
-			return &trie.AccountResult{}, nil
+			return &AccountResult{}, nil
 		}
 
 		var a accounts.Account
 		if err := a.DecodeForStorage(v); err != nil {
 			return nil, err
 		}
-		result := &trie.AccountResult{}
+		result := &AccountResult{}
 		result.Balance.ToInt().Set(a.Balance.ToBig())
 		result.Nonce = hexutil.Uint64(a.Nonce)
 		result.CodeHash = a.CodeHash
@@ -344,7 +342,7 @@ func (api *PrivateDebugAPIImpl) AccountAt(ctx context.Context, blockHash common.
 	if err != nil {
 		return nil, err
 	}
-	result := &trie.AccountResult{}
+	result := &AccountResult{}
 	result.Balance.ToInt().Set(ibs.GetBalance(address).ToBig())
 	result.Nonce = hexutil.Uint64(ibs.GetNonce(address))
 	result.Code = ibs.GetCode(address)
@@ -352,14 +350,9 @@ func (api *PrivateDebugAPIImpl) AccountAt(ctx context.Context, blockHash common.
 	return result, nil
 }
 
-type AccountResult_X struct {
+type AccountResult struct {
 	Balance  hexutil.Big    `json:"balance"`
 	Nonce    hexutil.Uint64 `json:"nonce"`
 	Code     hexutil.Bytes  `json:"code"`
 	CodeHash common.Hash    `json:"codeHash"`
 }
-//type StorageResult struct {
-//	Key   string       `json:"key"`
-//	Value *hexutil.Big `json:"value"`
-//	Proof []string     `json:"proof"`
-//}
