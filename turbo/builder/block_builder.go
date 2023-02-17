@@ -5,44 +5,46 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ledgerwatch/log/v3"
+
 	"github.com/ledgerwatch/erigon/core"
 	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/log/v3"
 	//"github.com/ledgerwatch/erigon/common/hexutil"
 )
 
-type BlockBuilderFunc func(param *core.BlockBuilderParameters, interrupt *int32) (*types.Block, error)
+type BlockBuilderFunc func(param *core.BlockBuilderParameters, interrupt *int32) (*types.BlockWithReceipts, error)
 
 // BlockBuilder wraps a goroutine that builds Proof-of-Stake payloads (PoS "mining")
 type BlockBuilder struct {
 	interrupt int32
 	syncCond  *sync.Cond
-	block     *types.Block
+	result    *types.BlockWithReceipts
 	err       error
 }
 
 func NewBlockBuilder(build BlockBuilderFunc, param *core.BlockBuilderParameters) *BlockBuilder {
-	b := new(BlockBuilder)
-	b.syncCond = sync.NewCond(new(sync.Mutex))
+	builder := new(BlockBuilder)
+	builder.syncCond = sync.NewCond(new(sync.Mutex))
 
 	go func() {
 		log.Info("Building block...")
 		t := time.Now()
-		block, err := build(param, &b.interrupt)
+		result, err := build(param, &builder.interrupt)
 		if err != nil {
 			log.Warn("Failed to build a block", "err", err)
 		} else {
+			block := result.Block
 			log.Info("Built block", "hash", block.Hash(), "height", block.NumberU64(), "txs", len(block.Transactions()), "gas used %", 100*float64(block.GasUsed())/float64(block.GasLimit()), "time", time.Since(t))
 		}
 
-		b.syncCond.L.Lock()
-		defer b.syncCond.L.Unlock()
-		b.block = block
-		b.err = err
-		b.syncCond.Broadcast()
+		builder.syncCond.L.Lock()
+		defer builder.syncCond.L.Unlock()
+		builder.result = result
+		builder.err = err
+		builder.syncCond.Broadcast()
 	}()
 
-	return b
+	return builder
 }
 
 func NewBlockBuilderMM(
@@ -53,43 +55,54 @@ func NewBlockBuilderMM(
 	mmChan chan int,
 	) *BlockBuilder {
 
-	b := new(BlockBuilder)
-	b.syncCond = sync.NewCond(new(sync.Mutex))
+	builder := new(BlockBuilder)
+	builder.syncCond = sync.NewCond(new(sync.Mutex))
         
         param.Deposits = deposits
 	param.NoTxPool = noTxPool
         log.Debug("MMDBG NewBlockBuilderMM", "deposits", deposits, "param", param)
 
 	go func() {
-		block, err := build(param, &b.interrupt)
-		b.syncCond.L.Lock()
-		defer b.syncCond.L.Unlock()
-		b.block = block
-		b.err = err
+		log.Info("Building block...")
+		t := time.Now()
+		result, err := build(param, &builder.interrupt)
+		if err != nil {
+			log.Warn("Failed to build a block", "err", err)
+		} else {
+			block := result.Block
+			log.Info("Built block", "hash", block.Hash(), "height", block.NumberU64(), "txs", len(block.Transactions()), "gas used %", 100*float64(block.GasUsed())/float64(block.GasLimit()), "time", time.Since(t))
+		}
+		builder.syncCond.L.Lock()
+		defer builder.syncCond.L.Unlock()
+		builder.result = result
+		builder.err = err
 		log.Debug("MMDBG NewBlockBuilderMM notifying mmChan")
 		mmChan <- 1
-		log.Debug("MMDBG NewBlockBuilderMM broadcasting syncCond", "b", b)
-		b.syncCond.Broadcast()
+		log.Debug("MMDBG NewBlockBuilderMM broadcasting syncCond", "builder", builder)
+		builder.syncCond.Broadcast()
 	}()
-	log.Debug("MMDBG NewBlockBuilderMM returning", "b", b)
-	return b
+	log.Debug("MMDBG NewBlockBuilderMM returning", "builder", builder)
+	return builder
 }
 
-func (b *BlockBuilder) Stop() (*types.Block, error) {
+func (b *BlockBuilder) Stop() (*types.BlockWithReceipts, error) {
 	atomic.StoreInt32(&b.interrupt, 1)
 
 	b.syncCond.L.Lock()
 	defer b.syncCond.L.Unlock()
-	for b.block == nil && b.err == nil {
+	for b.result == nil && b.err == nil {
 		b.syncCond.Wait()
 	}
 
-	return b.block, b.err
+	return b.result, b.err
 }
 
 func (b *BlockBuilder) Block() *types.Block {
 	b.syncCond.L.Lock()
 	defer b.syncCond.L.Unlock()
 
-	return b.block
+	if b.result == nil {
+		return nil
+	}
+	return b.result.Block
 }
