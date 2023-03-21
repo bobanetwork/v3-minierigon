@@ -24,7 +24,6 @@ import (
 	metrics2 "github.com/VictoriaMetrics/metrics"
 	"github.com/ledgerwatch/erigon-lib/common/metrics"
 	"github.com/ledgerwatch/erigon/common/fdlimit"
-	"github.com/ledgerwatch/erigon/metrics/exp"
 	"github.com/ledgerwatch/erigon/turbo/logging"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/spf13/cobra"
@@ -120,15 +119,6 @@ func SetupCobra(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	metricsPort, err := flags.GetInt(metricsPortFlag.Name)
-	if err != nil {
-		return err
-	}
-
-	if metrics.Enabled && metricsAddr != "" {
-		address := fmt.Sprintf("%s:%d", metricsAddr, metricsPort)
-		exp.Setup(address)
-	}
 
 	withMetrics := metrics.Enabled && metricsAddr == ""
 	if pprof {
@@ -158,12 +148,6 @@ func Setup(ctx *cli.Context) error {
 	}
 	pprofEnabled := ctx.Bool(pprofFlag.Name)
 	metricsAddr := ctx.String(metricsAddrFlag.Name)
-
-	if metrics.Enabled && (!pprofEnabled || metricsAddr != "") {
-		metricsPort := ctx.Int(metricsPortFlag.Name)
-		address := fmt.Sprintf("%s:%d", metricsAddr, metricsPort)
-		exp.Setup(address)
-	}
 
 	// pprof server
 	if pprofEnabled {
