@@ -108,7 +108,6 @@ erigon: go-version erigon.cmd
 COMMANDS += erigon-el-mock
 COMMANDS += erigon-cl
 COMMANDS += hack
-COMMANDS += observer
 COMMANDS += rpcdaemon
 COMMANDS += sentry
 COMMANDS += state
