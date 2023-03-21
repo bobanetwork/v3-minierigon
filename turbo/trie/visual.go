@@ -21,11 +21,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"math/big"
 
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
-
-	"github.com/ledgerwatch/erigon/visual"
 )
 
 // VisualOpts contains various configuration options fo the Visual function
@@ -78,7 +75,6 @@ func visualNode(nd node, hex []byte, w io.Writer, highlights [][]byte, opts *Vis
 				pLenMax = pLen
 			}
 		}
-		visual.Vertical(w, n.Key, pLenMax, fmt.Sprintf("n_%x", hex), opts.IndexColors, opts.FontColors, opts.CutTerminals)
 		if v, ok := n.Val.(valueNode); ok {
 			if leaves != nil {
 				leaves[string(hex)] = struct{}{}
@@ -95,14 +91,11 @@ func visualNode(nd node, hex []byte, w io.Writer, highlights [][]byte, opts *Vis
 				*/
 				valHex := keybytesToHex(v)
 				valHex = valHex[:len(valHex)-1]
-				visual.HexBox(w, fmt.Sprintf("e_%x", concat(hex, n.Key...)), valHex, 32, opts.ValCompressed, false)
 				fmt.Fprintf(w,
 					`n_%x -> e_%x;
 	`, hex, concat(hex, n.Key...))
 			}
 		} else if a, ok := n.Val.(*accountNode); ok {
-			balance := float64(big.NewInt(0).Div(a.Balance.ToBig(), big.NewInt(1000000000000000)).Uint64()) / 1000.0
-			visual.Circle(w, fmt.Sprintf("e_%x", concat(hex, n.Key...)), fmt.Sprintf("%d \u039E%.3f", a.Nonce, balance), true)
 			accountHex := concat(hex, n.Key...)
 			fmt.Fprintf(w,
 				`n_%x -> e_%x;
@@ -111,9 +104,6 @@ func visualNode(nd node, hex []byte, w io.Writer, highlights [][]byte, opts *Vis
 				if code := a.code; code != nil {
 					codeHex := keybytesToHex(code)
 					codeHex = codeHex[:len(codeHex)-1]
-					visual.HexBox(w, fmt.Sprintf("c_%x", accountHex), codeHex, 32, opts.CodeCompressed, false)
-				} else {
-					visual.Box(w, fmt.Sprintf("c_%x", accountHex), "codeHash")
 				}
 				fmt.Fprintf(w,
 					`e_%x -> c_%x;
@@ -132,8 +122,6 @@ func visualNode(nd node, hex []byte, w io.Writer, highlights [][]byte, opts *Vis
 						}
 					}
 					visualNode(a.storage, accountHex[:len(accountHex)-1], w, newHighlights, opts, leaves, hashes)
-				} else {
-					visual.Box(w, fmt.Sprintf("n_%x", accountHex[:len(accountHex)-1]), "storHash")
 				}
 				fmt.Fprintf(w,
 					`e_%x -> n_%x;
@@ -175,23 +163,23 @@ func visualNode(nd node, hex []byte, w io.Writer, highlights [][]byte, opts *Vis
 		}
 		if hOn1 {
 			fmt.Fprintf(w,
-				` 
+				`
 			<td bgcolor="%s" port="h%d"><font color="%s">%s</font></td>
 `, opts.IndexColors[i1], i1, opts.FontColors[i1], indices[i1])
 		} else {
 			fmt.Fprintf(w,
-				` 
+				`
 			<td bgcolor="%s" port="h%d"></td>
 `, opts.IndexColors[i1], i1)
 		}
 		if hOn2 {
 			fmt.Fprintf(w,
-				` 
+				`
 			<td bgcolor="%s" port="h%d"><font color="%s">%s</font></td>
 `, opts.IndexColors[i2], i2, opts.FontColors[i2], indices[i2])
 		} else {
 			fmt.Fprintf(w,
-				` 
+				`
 			<td bgcolor="%s" port="h%d"></td>
 `, opts.IndexColors[i2], i2)
 		}
@@ -262,7 +250,6 @@ func visualNode(nd node, hex []byte, w io.Writer, highlights [][]byte, opts *Vis
 		}
 	case hashNode:
 		hashes[string(hex)] = struct{}{}
-		visual.Box(w, fmt.Sprintf("n_%x", hex), "hash")
 	}
 }
 

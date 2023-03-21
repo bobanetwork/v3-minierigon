@@ -112,7 +112,6 @@ COMMANDS += erigon-cl
 COMMANDS += hack
 COMMANDS += integration
 COMMANDS += observer
-COMMANDS += pics
 COMMANDS += rpcdaemon
 COMMANDS += rpctest
 COMMANDS += sentry
