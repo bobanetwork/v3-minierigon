@@ -49,7 +49,6 @@ import (
 	"github.com/ledgerwatch/erigon/crypto"
 	"github.com/ledgerwatch/erigon/eth/tracers/logger"
 	"github.com/ledgerwatch/erigon/rlp"
-	"github.com/ledgerwatch/erigon/tests"
 	"github.com/ledgerwatch/erigon/turbo/trie"
 )
 
@@ -195,12 +194,12 @@ func Main(ctx *cli.Context) error {
 	}
 	// Construct the chainconfig
 	var chainConfig *chain.Config
-	if cConf, extraEips, err1 := tests.GetChainConfig(ctx.String(ForknameFlag.Name)); err1 != nil {
-		return NewError(ErrorVMConfig, fmt.Errorf("failed constructing chain configuration: %v", err1))
-	} else { //nolint:golint
-		chainConfig = cConf
-		vmConfig.ExtraEips = extraEips
-	}
+	// if cConf, extraEips, err1 := tests.GetChainConfig(ctx.String(ForknameFlag.Name)); err1 != nil {
+	// 	return NewError(ErrorVMConfig, fmt.Errorf("failed constructing chain configuration: %v", err1))
+	// } else { //nolint:golint
+	// 	chainConfig = cConf
+	// 	vmConfig.ExtraEips = extraEips
+	// }
 	// Set the chain id
 	chainConfig.ChainID = big.NewInt(ctx.Int64(ChainIDFlag.Name))
 

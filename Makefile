@@ -105,23 +105,19 @@ geth: erigon
 erigon: go-version erigon.cmd
 	@rm -f $(GOBIN)/tg # Remove old binary to prevent confusion where users still use it because of the scripts
 
-# COMMANDS += devnet
-# COMMANDS += erigon-el-mock
-# COMMANDS += downloader
-# COMMANDS += erigon-cl
-# COMMANDS += hack
-# COMMANDS += integration
-# COMMANDS += observer
-# COMMANDS += rpcdaemon
-# COMMANDS += rpctest
-# COMMANDS += sentry
-# COMMANDS += state
-# COMMANDS += txpool
-# COMMANDS += verkle
-# COMMANDS += evm
-# COMMANDS += lightclient
-# COMMANDS += sentinel
-# COMMANDS += erigon-el
+COMMANDS += erigon-el-mock
+COMMANDS += erigon-cl
+COMMANDS += hack
+COMMANDS += observer
+COMMANDS += rpcdaemon
+COMMANDS += sentry
+COMMANDS += state
+COMMANDS += txpool
+COMMANDS += verkle
+COMMANDS += evm
+COMMANDS += lightclient
+COMMANDS += sentinel
+COMMANDS += erigon-el
 
 # build each command using %.cmd rule
 $(COMMANDS): %: %.cmd
