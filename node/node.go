@@ -36,7 +36,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
-	"github.com/ledgerwatch/erigon/migrations"
 	"github.com/ledgerwatch/erigon/p2p"
 	"github.com/ledgerwatch/log/v3"
 )
@@ -339,10 +338,10 @@ func OpenDatabase(config *nodecfg.Config, logger log.Logger, label kv.Label) (kv
 			opts = opts.GrowthStep(16 * datasize.MB)
 		}
 		if label == kv.AcctProofDB {
-			proofCfg :=  func(defaultBuckets kv.TableCfg) kv.TableCfg {
-				return kv.TableCfg {
+			proofCfg := func(defaultBuckets kv.TableCfg) kv.TableCfg {
+				return kv.TableCfg{
 					"AccountProof": {},
-					"DbInfo": {},
+					"DbInfo":       {},
 				}
 			}
 			opts = opts.WithTableCfg(proofCfg)
@@ -353,31 +352,6 @@ func OpenDatabase(config *nodecfg.Config, logger log.Logger, label kv.Label) (kv
 	db, err = openFunc(false)
 	if err != nil {
 		return nil, err
-	}
-	migrator := migrations.NewMigrator(label)
-	if err := migrator.VerifyVersion(db); err != nil {
-		return nil, err
-	}
-
-	has, err := migrator.HasPendingMigrations(db)
-	if err != nil {
-		return nil, err
-	}
-	if has {
-		log.Info("Re-Opening DB in exclusive mode to apply migrations")
-		db.Close()
-		db, err = openFunc(true)
-		if err != nil {
-			return nil, err
-		}
-		if err = migrator.Apply(db, config.Dirs.DataDir); err != nil {
-			return nil, err
-		}
-		db.Close()
-		db, err = openFunc(false)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	if err := db.Update(context.Background(), func(tx kv.RwTx) (err error) {
