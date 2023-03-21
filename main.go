@@ -9,8 +9,12 @@ import (
 	"strconv"
 
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon/consensus/misc"
+	"github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/erigon/crypto"
 	"github.com/ledgerwatch/erigon/oracle"
+	"github.com/ledgerwatch/erigon/params"
+	"github.com/ledgerwatch/erigon/rlp"
 )
 
 func check(err error) {
@@ -55,17 +59,33 @@ func main() {
 		// fmt.Println("committed transactions", hash, err)
 	}
 
-	// mips
 	// init secp256k1BytePoints
 	crypto.S256()
 
 	// get inputs
 	inputBytes := oracle.Preimage(oracle.InputHash())
-	fmt.Println("inputBytes:", inputBytes)
+	fmt.Println("inputBytes", len(inputBytes), inputBytes)
 	var inputs [6]common.Hash
 	for i := 0; i < len(inputs); i++ {
 		inputs[i] = common.BytesToHash(inputBytes[i*0x20 : i*0x20+0x20])
 	}
+	// read start block header
+	var parent types.Header
+	check(rlp.DecodeBytes(oracle.Preimage(inputs[0]), &parent))
+
+	// read header
+	var newheader types.Header
+	// from parent
+	newheader.ParentHash = parent.Hash()
+	newheader.Number = big.NewInt(0).Add(parent.Number, big.NewInt(1))
+	newheader.BaseFee = misc.CalcBaseFee(params.MainnetChainConfig, &parent)
+
+	// from input oracle
+	newheader.TxHash = inputs[1]
+	newheader.Coinbase = common.BigToAddress(inputs[2].Big())
+	newheader.UncleHash = inputs[3]
+	newheader.GasLimit = inputs[4].Big().Uint64()
+	newheader.Time = inputs[5].Big().Uint64()
 
 	fmt.Println("Done!")
 }
