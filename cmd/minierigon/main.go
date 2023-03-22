@@ -10,9 +10,13 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/common"
+	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon/consensus/ethash"
 	"github.com/ledgerwatch/erigon/consensus/misc"
+	"github.com/ledgerwatch/erigon/core"
+	"github.com/ledgerwatch/erigon/core/state"
 	"github.com/ledgerwatch/erigon/core/types"
+	"github.com/ledgerwatch/erigon/core/vm"
 	"github.com/ledgerwatch/erigon/crypto"
 	"github.com/ledgerwatch/erigon/oracle"
 	"github.com/ledgerwatch/erigon/params"
@@ -100,7 +104,7 @@ func main() {
 	var uncles []*types.Header
 	check(rlp.DecodeBytes(oracle.Preimage(newheader.UncleHash), &uncles))
 
-	var receipts []*types.Receipt
+	var receipts types.Receipts
 	withdrawal := make([]*types.Withdrawal, 0, 0)
 	block := types.NewBlock(&newheader, txs, uncles, receipts, withdrawal)
 	fmt.Println("made block, parent:", newheader.ParentHash)
@@ -112,6 +116,23 @@ func main() {
 		panic("wrong uncles for block " + newheader.UncleHash.String() + " " + block.Header().UncleHash.String())
 	}
 
+	// validateState is more complete, gas used + bloom also
+	engine := ethash.NewFullFaker()
+	gp := new(core.GasPool).AddGas(block.GasLimit())
+	ibs := state.IntraBlockState{}
+	ibs.Prepare(newheader.Hash(), block.Hash(), 0)
+	noopWriter := state.NewNoopWriter()
+	getHeader := func(hash libcommon.Hash, number uint64) *types.Header { return &newheader }
+	for _, tx := range block.Transactions() {
+		receipt, _, err := core.ApplyTransaction(&chainConfig, core.GetHashFn(&newheader, getHeader), engine, &libcommon.Address{}, gp, &ibs, noopWriter, &newheader, tx, &newheader.GasUsed, vm.Config{})
+		if err != nil {
+			panic(err)
+		}
+		receipts = append(receipts, receipt)
+	}
+	receiptSha := types.DeriveSha(receipts)
+	fmt.Println("receipt count", len(receipts), "hash", receiptSha)
+
 	// TODO
-	// get transaction receipt and compare
+	// get the state root
 }
