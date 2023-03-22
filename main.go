@@ -8,7 +8,9 @@ import (
 	"runtime/pprof"
 	"strconv"
 
+	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon/consensus/ethash"
 	"github.com/ledgerwatch/erigon/consensus/misc"
 	"github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/erigon/crypto"
@@ -45,6 +47,7 @@ func main() {
 			basedir = "/tmp/cannon"
 		}
 
+		// TODO
 		// pkw := oracle.PreimageKeyValueWriter{}
 		// pkwtrie := trie.NewStackTrie(pkw)
 
@@ -87,5 +90,30 @@ func main() {
 	newheader.GasLimit = inputs[4].Big().Uint64()
 	newheader.Time = inputs[5].Big().Uint64()
 
-	fmt.Println("Done!")
+	chainConfig := chain.Config{ChainID: big.NewInt(288)}
+	newheader.Difficulty = ethash.CalcDifficulty(&chainConfig, newheader.Time, parent.Time, parent.Difficulty, parent.Number.Uint64(), parent.UncleHash)
+
+	var txs []types.Transaction
+	// TODO
+	// find the transactions in the trie
+	// triedb := oracle.NewDatabase(parent.Number, parent.Root)
+	// tt := trie.New(newheader.TxHash)
+
+	var uncles []*types.Header
+	check(rlp.DecodeBytes(oracle.Preimage(newheader.UncleHash), &uncles))
+
+	var receipts []*types.Receipt
+	withdrawal := make([]*types.Withdrawal, 0, 0)
+	block := types.NewBlock(&newheader, txs, uncles, receipts, withdrawal)
+	fmt.Println("made block, parent:", newheader.ParentHash)
+
+	if newheader.TxHash != block.Header().TxHash {
+		panic("wrong transactions for block")
+	}
+	if newheader.UncleHash != block.Header().UncleHash {
+		panic("wrong uncles for block " + newheader.UncleHash.String() + " " + block.Header().UncleHash.String())
+	}
+
+	// validateState is more complete, gas used + bloom also
+	// core.ApplyTransaction(chainConfig, &chainConfig.Ethash, &parent, &newheader, block, 0, &txs[0], &newheader.GasUsed, &vm.Config{})
 }
