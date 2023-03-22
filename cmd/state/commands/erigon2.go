@@ -411,7 +411,6 @@ func processBlock(trace bool, txNumStart uint64, rw *ReaderWrapper, ww *WriterWr
 	for i, tx := range block.Transactions() {
 		ibs := state.New(rw)
 		if daoBlock {
-			misc.ApplyDAOHardFork(ibs)
 			daoBlock = false
 		}
 		ibs.Prepare(tx.Hash(), block.Hash(), i)

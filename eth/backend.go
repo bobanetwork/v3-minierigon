@@ -96,7 +96,6 @@ import (
 	"github.com/ledgerwatch/erigon/eth/stagedsync/stages"
 	"github.com/ledgerwatch/erigon/ethdb/privateapi"
 	"github.com/ledgerwatch/erigon/ethdb/prune"
-	"github.com/ledgerwatch/erigon/ethstats"
 	"github.com/ledgerwatch/erigon/node"
 	"github.com/ledgerwatch/erigon/p2p"
 	"github.com/ledgerwatch/erigon/params"
@@ -522,7 +521,7 @@ func New(stack *node.Node, config *ethconfig.Config, logger log.Logger) (*Ethere
 
 	// proof-of-stake mining
 	assembleBlockPOS := func(param *core.BlockBuilderParameters, interrupt *int32) (*types.BlockWithReceipts, error) {
-        	//log.Debug("MMDBG assembleBlockPOS", "param", param)
+		//log.Debug("MMDBG assembleBlockPOS", "param", param)
 		miningStatePos := stagedsync.NewProposingState(&config.Miner)
 		miningStatePos.MiningConfig.Etherbase = param.SuggestedFeeRecipient
 		proposingSync := stagedsync.New(
@@ -534,11 +533,11 @@ func New(stack *node.Node, config *ethconfig.Config, logger log.Logger) (*Ethere
 				stagedsync.StageMiningFinishCfg(backend.chainDB, *backend.chainConfig, backend.engine, miningStatePos, backend.miningSealingQuit),
 			), stagedsync.MiningUnwindOrder, stagedsync.MiningPruneOrder)
 		// We start the mining step
-                log.Debug("MMDBG backend.go Start mining step", "param", param, "proposingSync", proposingSync)
+		log.Debug("MMDBG backend.go Start mining step", "param", param, "proposingSync", proposingSync)
 		if err := stages2.MiningStep(ctx, backend.chainDB, proposingSync, tmpdir); err != nil {
 			return nil, err
 		}
-                log.Debug("MMDBG backend.go Done mining step")
+		log.Debug("MMDBG backend.go Done mining step")
 		block := <-miningStatePos.MiningResultPOSCh
 		return block, nil
 	}
@@ -724,14 +723,6 @@ func (backend *Ethereum) Init(stack *node.Node, config *ethconfig.Config) error 
 	gpoParams := config.GPO
 	if gpoParams.Default == nil {
 		gpoParams.Default = config.Miner.GasPrice
-	}
-	//eth.APIBackend.gpo = gasprice.NewOracle(eth.APIBackend, gpoParams)
-	if config.Ethstats != "" {
-		var headCh chan [][]byte
-		headCh, backend.unsubscribeEthstat = backend.notifications.Events.AddHeaderSubscription()
-		if err := ethstats.New(stack, backend.sentryServers, chainKv, backend.engine, config.Ethstats, backend.networkID, ctx.Done(), headCh); err != nil {
-			return err
-		}
 	}
 	// start HTTP API
 	httpRpcCfg := stack.Config().Http

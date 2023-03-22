@@ -23,7 +23,6 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/ledgerwatch/erigon/core/vm"
-	"github.com/ledgerwatch/erigon/tests"
 )
 
 var (
@@ -97,7 +96,6 @@ var (
 			"\n\tAvailable extra eips:"+
 			"\n\t    %v"+
 			"\n\tSyntax <forkname>(+ExtraEip)",
-			strings.Join(tests.AvailableForks(), "\n\t    "),
 			strings.Join(vm.ActivateableEips(), ", ")),
 		Value: "ArrowGlacier",
 	}

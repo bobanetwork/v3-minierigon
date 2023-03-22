@@ -28,7 +28,6 @@ import (
 	"github.com/ledgerwatch/erigon/turbo/services"
 
 	"github.com/ledgerwatch/erigon/consensus"
-	"github.com/ledgerwatch/erigon/consensus/misc"
 	"github.com/ledgerwatch/erigon/core"
 	"github.com/ledgerwatch/erigon/core/state"
 	"github.com/ledgerwatch/erigon/core/systemcontracts"
@@ -97,9 +96,6 @@ func SpawnMiningExecStage(s *StageState, tx kv.RwTx, cfg MiningExecCfg, quit <-c
 	stateReader := state.NewPlainStateReader(tx)
 	ibs := state.New(stateReader)
 	stateWriter := state.NewPlainStateWriter(tx, tx, current.Header.Number.Uint64())
-	if cfg.chainConfig.DAOForkSupport && cfg.chainConfig.DAOForkBlock != nil && cfg.chainConfig.DAOForkBlock.Cmp(current.Header.Number) == 0 {
-		misc.ApplyDAOHardFork(ibs)
-	}
 	systemcontracts.UpgradeBuildInSystemContract(&cfg.chainConfig, current.Header.Number, ibs)
 
 	// Create an empty block based on temporary copied state for
@@ -120,14 +116,14 @@ func SpawnMiningExecStage(s *StageState, tx kv.RwTx, cfg MiningExecCfg, quit <-c
 		log.Debug("MMDBG SpawnMiningExecStage", "txs", txs, "Deposits", current.Deposits, "NoTxPool", current.NoTxPool)
 
 		if current.Deposits != nil && len(current.Deposits) != 0 {
-		
+
 			var txs []types.Transaction
 			for i := range current.Deposits {
 				s := rlp.NewStream(bytes.NewReader(current.Deposits[i]), uint64(len(current.Deposits[i])))
-                		log.Debug("MMDBG Candidate transaction", "i", i, "tx", current.Deposits[i], "s", s)
+				log.Debug("MMDBG Candidate transaction", "i", i, "tx", current.Deposits[i], "s", s)
 
 				transaction, err := types.DecodeTransaction(s)
-                		log.Debug("MMDBG Decoded", "err", err, "tx", transaction)
+				log.Debug("MMDBG Decoded", "err", err, "tx", transaction)
 				if err == io.EOF {
 					continue
 				}

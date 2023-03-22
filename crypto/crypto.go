@@ -31,6 +31,7 @@ import (
 
 	"github.com/holiman/uint256"
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/secp256k1"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/ledgerwatch/erigon/crypto/cryptopool"
@@ -323,4 +324,9 @@ func zeroBytes(bytes []byte) {
 	for i := range bytes {
 		bytes[i] = 0
 	}
+}
+
+// Ecrecover returns the uncompressed public key that created the given signature.
+func EcrecoverWithContext(context *secp256k1.Context, hash, sig []byte) ([]byte, error) {
+	return secp256k1.RecoverPubkeyWithContext(context, hash, sig, nil)
 }
