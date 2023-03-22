@@ -12,7 +12,6 @@ import (
 
 	"github.com/ledgerwatch/erigon/cmd/state/exec22"
 	"github.com/ledgerwatch/erigon/consensus"
-	"github.com/ledgerwatch/erigon/consensus/misc"
 	"github.com/ledgerwatch/erigon/core"
 	"github.com/ledgerwatch/erigon/core/rawdb"
 	"github.com/ledgerwatch/erigon/core/state"
@@ -142,7 +141,6 @@ func (rw *Worker) RunTxTask(txTask *exec22.TxTask) {
 		rules = &chain.Rules{}
 	} else if daoForkTx {
 		//fmt.Printf("txNum=%d, blockNum=%d, DAO fork\n", txTask.TxNum, txTask.BlockNum)
-		misc.ApplyDAOHardFork(ibs)
 		ibs.SoftFinalise()
 	} else if txTask.TxIndex == -1 {
 		// Block initialisation

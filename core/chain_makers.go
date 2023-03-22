@@ -314,18 +314,7 @@ func GenerateChain(config *chain.Config, parent *types.Block, engine consensus.E
 		plainStateWriter *state.PlainStateWriter) (*types.Block, types.Receipts, error) {
 		b := &BlockGen{i: i, chain: blocks, parent: parent, ibs: ibs, stateReader: stateReader, config: config, engine: engine, txs: make([]types.Transaction, 0, 1), receipts: make([]*types.Receipt, 0, 1), uncles: make([]*types.Header, 0, 1)}
 		b.header = makeHeader(chainreader, parent, ibs, b.engine)
-		// Mutate the state and block according to any hard-fork specs
-		if daoBlock := config.DAOForkBlock; daoBlock != nil {
-			limit := new(big.Int).Add(daoBlock, params.DAOForkExtraRange)
-			if b.header.Number.Cmp(daoBlock) >= 0 && b.header.Number.Cmp(limit) < 0 {
-				if config.DAOForkSupport {
-					b.header.Extra = common.CopyBytes(params.DAOForkBlockExtra)
-				}
-			}
-		}
-		if config.DAOForkSupport && config.DAOForkBlock != nil && config.DAOForkBlock.Cmp(b.header.Number) == 0 {
-			misc.ApplyDAOHardFork(ibs)
-		}
+
 		systemcontracts.UpgradeBuildInSystemContract(config, b.header.Number, ibs)
 		// Execute any user modifications to the block
 		if gen != nil {

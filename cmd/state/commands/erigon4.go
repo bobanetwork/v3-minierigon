@@ -350,7 +350,6 @@ func processBlock23(startTxNum uint64, trace bool, txNumStart uint64, rw *Reader
 	if daoFork {
 		ibs := state.New(rw)
 		// TODO Actually add tracing to the DAO related accounts
-		misc.ApplyDAOHardFork(ibs)
 		if err := ibs.FinalizeTx(rules, ww); err != nil {
 			return 0, nil, err
 		}

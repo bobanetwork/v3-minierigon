@@ -35,7 +35,6 @@ import (
 	"github.com/ledgerwatch/erigon/common/math"
 	"github.com/ledgerwatch/erigon/common/u256"
 	"github.com/ledgerwatch/erigon/consensus"
-	"github.com/ledgerwatch/erigon/consensus/misc"
 	"github.com/ledgerwatch/erigon/core/state"
 	"github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/erigon/core/vm"
@@ -103,9 +102,6 @@ func ExecuteBlockEphemerallyForBSC(
 		}
 	}
 
-	if chainConfig.DAOForkSupport && chainConfig.DAOForkBlock != nil && chainConfig.DAOForkBlock.Cmp(block.Number()) == 0 {
-		misc.ApplyDAOHardFork(ibs)
-	}
 	systemcontracts.UpgradeBuildInSystemContract(chainConfig, header.Number, ibs)
 	noop := state.NewNoopWriter()
 	posa, isPoSA := engine.(consensus.PoSA)
@@ -254,9 +250,6 @@ func ExecuteBlockEphemerally(
 		}
 	}
 
-	if chainConfig.DAOForkSupport && chainConfig.DAOForkBlock != nil && chainConfig.DAOForkBlock.Cmp(block.Number()) == 0 {
-		misc.ApplyDAOHardFork(ibs)
-	}
 	noop := state.NewNoopWriter()
 	//fmt.Printf("====txs processing start: %d====\n", block.NumberU64())
 	for i, tx := range block.Transactions() {
@@ -365,9 +358,6 @@ func ExecuteBlockEphemerallyBor(
 		}
 	}
 
-	if chainConfig.DAOForkSupport && chainConfig.DAOForkBlock != nil && chainConfig.DAOForkBlock.Cmp(block.Number()) == 0 {
-		misc.ApplyDAOHardFork(ibs)
-	}
 	noop := state.NewNoopWriter()
 	//fmt.Printf("====txs processing start: %d====\n", block.NumberU64())
 	for i, tx := range block.Transactions() {
@@ -468,9 +458,6 @@ func rlpHash(x interface{}) (h libcommon.Hash) {
 }
 
 func SysCallContract(contract libcommon.Address, data []byte, chainConfig chain.Config, ibs *state.IntraBlockState, header *types.Header, engine consensus.EngineReader, constCall bool) (result []byte, err error) {
-	if chainConfig.DAOForkSupport && chainConfig.DAOForkBlock != nil && chainConfig.DAOForkBlock.Cmp(header.Number) == 0 {
-		misc.ApplyDAOHardFork(ibs)
-	}
 
 	msg := types.NewMessage(
 		state.SystemAddress,
@@ -512,9 +499,6 @@ func SysCallContract(contract libcommon.Address, data []byte, chainConfig chain.
 
 // SysCreate is a special (system) contract creation methods for genesis constructors.
 func SysCreate(contract libcommon.Address, data []byte, chainConfig chain.Config, ibs *state.IntraBlockState, header *types.Header) (result []byte, err error) {
-	if chainConfig.DAOForkSupport && chainConfig.DAOForkBlock != nil && chainConfig.DAOForkBlock.Cmp(header.Number) == 0 {
-		misc.ApplyDAOHardFork(ibs)
-	}
 
 	msg := types.NewMessage(
 		contract,
@@ -547,9 +531,6 @@ func CallContract(contract libcommon.Address, data []byte, chainConfig chain.Con
 	gp.AddGas(50_000_000)
 	var gasUsed uint64
 
-	if chainConfig.DAOForkSupport && chainConfig.DAOForkBlock != nil && chainConfig.DAOForkBlock.Cmp(header.Number) == 0 {
-		misc.ApplyDAOHardFork(ibs)
-	}
 	noop := state.NewNoopWriter()
 	tx, err := CallContractTx(contract, data, ibs)
 	if err != nil {

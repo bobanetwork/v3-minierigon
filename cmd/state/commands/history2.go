@@ -18,7 +18,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ledgerwatch/erigon/consensus/ethash"
-	"github.com/ledgerwatch/erigon/consensus/misc"
 	"github.com/ledgerwatch/erigon/core"
 	"github.com/ledgerwatch/erigon/core/rawdb"
 	"github.com/ledgerwatch/erigon/core/state"
@@ -156,7 +155,6 @@ func runHistory2(trace bool, blockNum, txNumStart uint64, hw *HistoryWrapper, ww
 		hw.r.SetNums(blockNum, txNum, false)
 		ibs := state.New(hw)
 		if daoBlock {
-			misc.ApplyDAOHardFork(ibs)
 			daoBlock = false
 		}
 		ibs.Prepare(tx.Hash(), block.Hash(), i)
